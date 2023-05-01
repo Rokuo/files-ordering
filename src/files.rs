@@ -12,6 +12,10 @@ pub fn list_files(path: &Path) -> Result<Vec<PathBuf>, io::Error> {
     Ok(files)
 }
 
+pub fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
+    fs::rename(from, to)
+}
+
 pub fn sort_files_by_name_ascending(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     files
@@ -129,6 +133,19 @@ mod tests {
         assert_eq!(files.len(), 4);
         assert_eq!(files[0].file_name(), Some(OsStr::new("test.png")));
         assert_eq!(files[3].file_name(), Some(OsStr::new("aleks.txt")));
+    }
+
+    #[test]
+    fn test_move_file_existing_file() {
+        let dir: TempDir = tempfile::tempdir().unwrap();
+        let file: &str = "file.txt";
+        std::fs::write(dir.path().join(file), b"test").unwrap();
+
+        let result: Result<(), io::Error> = move_file(&dir.path().join(file), &dir.path().join("new_file.txt"));
+
+        assert!(result.is_ok());
+        assert!(!dir.path().join(file).exists());
+        assert!(dir.path().join("new_file.txt").exists());
     }
 
 }
