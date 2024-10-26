@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs, io, ffi::{OsStr}};
+use std::{path::{Path, PathBuf}, fs, io};
 
 pub fn list_files(path: &Path) -> Result<Vec<PathBuf>, io::Error> {
     let mut files: Vec<PathBuf> = Vec::new();
@@ -26,7 +26,7 @@ pub fn sort_files_by_name_descending(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     files
 }
 
-pub fn sort_files_by_ext(files: Vec<PathBuf>,  exts: Vec<&str>) -> Vec<PathBuf> {
+pub fn sort_files_by_ext(_files: Vec<PathBuf>,  _exts: Vec<&str>) -> Vec<PathBuf> {
     todo!("sort_files_by_ext")
 }
 
