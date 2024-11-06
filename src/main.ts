@@ -17,10 +17,11 @@ async function greet() {
 
 async function listFiles() {
   if (listfilesMsgEl) {
-    alert('coucou');
-    listfilesMsgEl.textContent = await invoke("list_files", {
+    console.log('coucou');
+    const files : Array<String> = await invoke("list_files", {
       name: "osef"
     });
+    listfilesMsgEl.textContent = "{coucou}" + files.toString();
   }
 }
 
@@ -33,7 +34,6 @@ window.addEventListener("DOMContentLoaded", () => {
     greet();
   });
   document.querySelector("#listfiles-form")?.addEventListener("submit", (e) => {
-    alert('oui');
     e.preventDefault();
     listFiles();
   })

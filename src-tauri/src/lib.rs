@@ -8,20 +8,20 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn list_files(name: &str) -> String {
+fn list_files(name: &str) -> Vec<String> {
     let path: PathBuf = PathBuf::from(r".");
     let files: Result<Vec<PathBuf>, std::io::Error> = files::list_files(&path);
     match files {
         Ok(paths) => {
-            let filtered = files::filter_files_by_ext(paths, vec!["rs", "lock", "toml"]);
-            filtered.iter()
-                .filter_map(|path| path.file_name())
-                .filter_map(|name| name.to_str())
-                .map(|name| format!("There is {}!", name))
-                .collect::<Vec<_>>()
-                .join("\n")
+            paths.iter().filter_map(|path| path.file_name()).filter_map(|name| name.to_str()).map(|name| format!("There is {}!", name)).collect::<Vec<_>>()
+            // let filtered = files::filter_files_by_ext(paths, vec![]);
+            // filtered.iter()
+            //     .filter_map(|path| path.file_name())
+            //     .filter_map(|name| name.to_str())
+            //     .map(|name| format!("There is {}!", name))
+            //     .collect::<Vec<_>>()
         },
-        Err(error) => format!("Error : {}!", error)
+        Err(error) => Vec::<String>::new()
     }
 }
 
