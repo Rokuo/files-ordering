@@ -6,10 +6,17 @@ import "./App.css";
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
-
+  const [listFilesMsg, setListFilesMsg] = useState(Array<String>);
+  const [files, setFiles] = useState(Array<String>);
+  const path = String("./");
+  
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
+  }
+
+  async function listFiles() {
+    setListFilesMsg(await invoke("list_files", {name}));
   }
 
   return (
@@ -43,7 +50,13 @@ function App() {
         />
         <button type="submit">Greet</button>
       </form>
+
       <p>{greetMsg}</p>
+      <form className="row" onSubmit={(e) => {e.preventDefault();listFiles()}}>
+        <button type="submit">Listing files</button>
+      </form>
+      <span>{listFilesMsg.length}</span>
+      <ul>{listFilesMsg.map(e => <li>{e}</li>)}</ul>
     </main>
   );
 }
