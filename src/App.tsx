@@ -1,7 +1,9 @@
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
+import MyButton from "./Components/Button";
 import "./App.css";
+import FileListing from "./Components/FileListing";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -56,7 +58,7 @@ function App() {
         <button type="submit">Listing files</button>
       </form>
       <span>{listFilesMsg.length}</span>
-      <ul>{listFilesMsg.map(e => <li>{e}</li>)}</ul>
+      <FileListing path={"./"} files={listFilesMsg}></FileListing>
     </main>
   );
 }
