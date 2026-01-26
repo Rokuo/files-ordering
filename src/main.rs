@@ -1,6 +1,15 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use std::path::PathBuf;
+
+pub mod files;
 
 fn main() {
-    files_ordering_lib::run()
+    let path: PathBuf = PathBuf::from(r".");
+    let mut files: Result<Vec<PathBuf>, std::io::Error> = files::list_files(&path);
+    match files {
+        Ok(paths) => files::filter_files_by_ext(paths, vec!["md", "lock", "gitignore"]).into_iter().fold((), |acc, path| match path.file_name() {
+            Some(ref file) => println!("{}", file.to_str().unwrap()),
+            None => println!("oe")
+        }),
+        Err(error) => println!("does not exist")
+    }
 }

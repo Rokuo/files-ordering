@@ -6,8 +6,6 @@ authors = ["Aleks Dems"]
 edition = "2021"
 
 [dependencies]
-eframe = "0.29"
-egui = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
