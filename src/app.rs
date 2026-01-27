@@ -1,12 +1,17 @@
 use crate::core::organizer::Organizer;
 use crate::models::file_item::FileItem;
+use crate::core::rules::RuleEngine;
+use crate::models::config::AppConfig;
 use egui::Context;
 
 pub struct FileOrganizerApp {
-    organizer: Organizer,
-    selected_input_path: Option<String>,
-    files_to_organize: Vec<FileItem>,
-    current_view: AppView,
+    pub organizer: Organizer,
+    pub rule_engine: RuleEngine,
+    pub config: AppConfig,
+    pub selected_input_path: Option<String>,
+    pub selected_output_path: Option<String>,
+    pub files_to_organize: Vec<FileItem>,
+    pub current_view: AppView,
 }
 
 enum AppView {
@@ -20,7 +25,10 @@ impl Default for FileOrganizerApp {
     fn default() -> Self {
         Self {
             organizer: Organizer::new(),
+            rule_engine: RuleEngine::new(),
+            config: AppConfig::default(),
             selected_input_path: None,
+            selected_output_path: None,
             files_to_organize: Vec::new(),
             current_view: AppView::FileSelection,
         }
