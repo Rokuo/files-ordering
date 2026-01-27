@@ -12,6 +12,7 @@ pub struct FileOrganizerApp {
     pub selected_output_path: Option<String>,
     pub files_to_organize: Vec<FileItem>,
     pub current_view: AppView,
+    pub input_files: Vec<std::path::PathBuf>,
 }
 
 enum AppView {
@@ -31,6 +32,7 @@ impl Default for FileOrganizerApp {
             selected_output_path: None,
             files_to_organize: Vec::new(),
             current_view: AppView::FileSelection,
+            input_files: Vec::new(),
         }
     }
 }
