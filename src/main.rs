@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 pub mod files;
 mod app;
 mod core;

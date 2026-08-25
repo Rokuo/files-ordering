@@ -81,7 +81,6 @@ impl RuleEngine {
                 OrganizationRule::ByDate { format } => {
                     if let Ok(metadata) = std::fs::metadata(&file.path) {
                         if let Ok(modified) = metadata.modified() {
-                            use std::time::SystemTime;
                             let datetime: chrono::DateTime<chrono::Local> = modified.into();
                             
                             match format {

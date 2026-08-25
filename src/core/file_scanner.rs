@@ -1,5 +1,5 @@
 use crate::models::file_item::FileItem;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 
 pub struct FileScanner {
     recursive: bool,
