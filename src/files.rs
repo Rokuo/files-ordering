@@ -26,18 +26,12 @@ pub fn sort_files_by_name_descending(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     files
 }
 
-pub fn sort_files_by_ext(files: Vec<PathBuf>,  exts: Vec<&str>) -> Vec<PathBuf> {
-    let mut ret_files: Vec<PathBuf> = Vec::new();
-    let mut remains: Vec<PathBuf> = files.clone();
-    remains.retain(|file| {
-        match file.extension() {
-            Some(ext) => !exts.contains(&ext.to_str().unwrap()),
-            None => true
-        }
-    });
-    exts.into_iter().for_each(|ext: &str| ret_files.append(&mut sort_files_by_name_ascending(filter_files_by_ext(files.clone(), vec![ext]))));
-    ret_files.append(&mut sort_files_by_name_ascending(remains));
-    ret_files
+pub fn sort_files_by_ext(mut files: Vec<PathBuf>,  exts: Vec<&str>) -> Vec<PathBuf> {
+    let rank = |file: &PathBuf| {
+        exts.iter().position(|e| Some(*e) == file.extension().and_then(|e| e.to_str())).unwrap_or(exts.len())
+    };
+    files.sort_by(|a, b: &PathBuf| rank(a).cmp(&rank(b)).then_with(|| a.file_name().cmp(&b.file_name())));
+    files
 }
 
 pub fn filter_files_by_ext(mut files: Vec<PathBuf>, exts: Vec<&str>) -> Vec<PathBuf> {
@@ -112,7 +106,7 @@ mod tests {
     fn test_sort_files_by_ext() {
         let dir: TempDir = tempfile::tempdir().unwrap();
         let extensions = vec!["txt", "png"];
-        let orig_files: Vec<&str> = vec!["sound.mp3", "aleks.txt", "file2.txt", "test.png", "bytes"];
+        let orig_files: Vec<&str> = vec!["sound.mp3", "file2.txt", "aleks.txt", "test.png", "bytes"];
         std::fs::write(dir.path().join(orig_files[0]), b"test").unwrap();
         std::fs::write(dir.path().join(orig_files[1]), "hello").unwrap();
         std::fs::write(dir.path().join(orig_files[2]), "world").unwrap();
