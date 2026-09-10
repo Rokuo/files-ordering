@@ -6,16 +6,16 @@ use egui::Context;
 
 pub struct FileOrganizerApp {
     pub organizer: Organizer,
-    pub rule_engine: RuleEngine,
     pub config: AppConfig,
     pub selected_input_path: Option<String>,
     pub selected_output_path: Option<String>,
     pub files_to_organize: Vec<FileItem>,
     pub current_view: AppView,
+    pub rule_engine: RuleEngine,
     pub input_files: Vec<std::path::PathBuf>,
 }
 
-enum AppView {
+pub enum AppView {
     FileSelection,
     RulesConfiguration,
     Preview,

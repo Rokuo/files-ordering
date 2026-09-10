@@ -65,7 +65,7 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
 
             // For now, just print the files to be moved
             for file in &app.files_to_organize {
-                move_file(&file.path.clone(), &Path::new(app.selected_output_path.as_ref().unwrap()).join(&file.name));
+                let _ = move_file(&file.path.clone(), &Path::new(app.selected_output_path.as_ref().unwrap()).join(&file.name));
             }
 
         }
