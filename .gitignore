@@ -10,6 +10,10 @@ Cargo.lock
 **/*.rs.bk
 
 
+# Claude files
+CLAUDE.md
+.claude/
+
 # Added by cargo
 
 /target

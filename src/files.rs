@@ -26,8 +26,12 @@ pub fn sort_files_by_name_descending(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     files
 }
 
-pub fn sort_files_by_ext(_files: Vec<PathBuf>,  _exts: Vec<&str>) -> Vec<PathBuf> {
-    todo!("sort_files_by_ext")
+pub fn sort_files_by_ext(mut files: Vec<PathBuf>,  exts: Vec<&str>) -> Vec<PathBuf> {
+    let rank = |file: &PathBuf| {
+        exts.iter().position(|e| Some(*e) == file.extension().and_then(|e| e.to_str())).unwrap_or(exts.len())
+    };
+    files.sort_by(|a, b: &PathBuf| rank(a).cmp(&rank(b)).then_with(|| a.file_name().cmp(&b.file_name())));
+    files
 }
 
 pub fn filter_files_by_ext(mut files: Vec<PathBuf>, exts: Vec<&str>) -> Vec<PathBuf> {
@@ -100,7 +104,23 @@ mod tests {
 
     #[test]
     fn test_sort_files_by_ext() {
+        let dir: TempDir = tempfile::tempdir().unwrap();
+        let extensions = vec!["txt", "png"];
+        let orig_files: Vec<&str> = vec!["sound.mp3", "file2.txt", "aleks.txt", "test.png", "bytes"];
+        std::fs::write(dir.path().join(orig_files[0]), b"test").unwrap();
+        std::fs::write(dir.path().join(orig_files[1]), "hello").unwrap();
+        std::fs::write(dir.path().join(orig_files[2]), "world").unwrap();
+        std::fs::write(dir.path().join(orig_files[3]), b"test").unwrap();
+        std::fs::write(dir.path().join(orig_files[4]), b"test").unwrap();
 
+        let files: Vec<PathBuf> = sort_files_by_ext(list_files(dir.path()).unwrap(), extensions);
+
+        assert_eq!(files.len(), 5);
+        assert_eq!(files[0].file_name(), Some(OsStr::new("aleks.txt")));
+        assert_eq!(files[1].file_name(), Some(OsStr::new("file2.txt")));
+        assert_eq!(files[2].file_name(), Some(OsStr::new("test.png")));
+        assert_eq!(files[3].file_name(), Some(OsStr::new("bytes")));
+        assert_eq!(files[4].file_name(), Some(OsStr::new("sound.mp3")));
     }
 
     #[test]
