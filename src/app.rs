@@ -2,7 +2,6 @@ use crate::core::organizer::Organizer;
 use crate::models::file_item::FileItem;
 use crate::core::rules::RuleEngine;
 use crate::models::config::AppConfig;
-use egui::Context;
 
 pub struct FileOrganizerApp {
     pub organizer: Organizer,
@@ -38,8 +37,8 @@ impl Default for FileOrganizerApp {
 }
 
 impl eframe::App for FileOrganizerApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("File Organizer");
             
             ui.separator();
