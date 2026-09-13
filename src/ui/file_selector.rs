@@ -4,14 +4,14 @@ use std::path::Path;
 
 pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
     ui.heading("Select Input Folder");
-    
+
     ui.horizontal(|ui| {
         if let Some(ref path) = app.selected_input_path {
             ui.label(format!("Selected: {}", path));
         } else {
             ui.label("No folder selected");
         }
-        
+
         if ui.button("Browse...").clicked() {
             // File dialog integration here
             // You might want to add `rfd` crate for native file dialogs
@@ -29,7 +29,7 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
         } else {
             ui.label("No folder selected");
         }
-        
+
         if ui.button("Browse...").clicked() {
             // File dialog integration here
             if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -37,16 +37,21 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
             }
         }
     });
-    
-    if app.selected_input_path.is_some() {
-        if ui.button("Next: Configure Rules").clicked() {
-            // Scan files and move to next view
-            list_files(Path::new(app.selected_input_path.as_ref().unwrap()))
-                .map(|files| app.files_to_organize = files.iter().map(|p| crate::models::file_item::FileItem::new(p.to_path_buf()).unwrap()).collect())
-                .unwrap_or_else(|err| {
-                    eprintln!("Error listing files: {}", err);
-                });
-        }
+
+    if let Some(input) = &app.selected_input_path
+        && ui.button("Next: Configure Rules").clicked()
+    {
+        // Scan files and move to next view
+        list_files(Path::new(input))
+            .map(|files| {
+                app.files_to_organize = files
+                    .iter()
+                    .map(|p| crate::models::file_item::FileItem::new(p.to_path_buf()).unwrap())
+                    .collect()
+            })
+            .unwrap_or_else(|err| {
+                eprintln!("Error listing files: {}", err);
+            });
     }
 
     if app.files_to_organize.is_empty() {
@@ -55,8 +60,10 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
         ui.label(format!("{} files found.", app.files_to_organize.len()));
     }
 
-
-    if !app.files_to_organize.is_empty() && app.selected_input_path.is_some() && app.selected_output_path.is_some() {
+    if let Some(output) = &app.selected_output_path
+        && !app.files_to_organize.is_empty()
+        && app.selected_input_path.is_some()
+    {
         ui.label("Move files");
 
         if ui.button("Move Files").clicked() {
@@ -65,9 +72,8 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
 
             // For now, just print the files to be moved
             for file in &app.files_to_organize {
-                let _ = move_file(&file.path.clone(), &Path::new(app.selected_output_path.as_ref().unwrap()).join(&file.name));
+                let _ = move_file(&file.path, &Path::new(output).join(&file.name));
             }
-
         }
     }
 }

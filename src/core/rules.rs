@@ -1,5 +1,7 @@
+#![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use crate::models::file_item::FileItem;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,9 +15,9 @@ pub enum OrganizationRule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DateFormat {
-    Year,           // 2024/
-    YearMonth,      // 2024/01/
-    YearMonthDay,   // 2024/01/15/
+    Year,         // 2024/
+    YearMonth,    // 2024/01/
+    YearMonthDay, // 2024/01/15/
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,8 +68,8 @@ impl RuleEngine {
         &self.rules
     }
 
-    pub fn apply_rules(&self, file: &FileItem, base_output: &PathBuf) -> PathBuf {
-        let mut destination = base_output.clone();
+    pub fn apply_rules(&self, file: &FileItem, base_output: &Path) -> PathBuf {
+        let mut destination = base_output.to_path_buf();
 
         for rule in &self.rules {
             match rule {
@@ -79,20 +81,20 @@ impl RuleEngine {
                     }
                 }
                 OrganizationRule::ByDate { format } => {
-                    if let Ok(metadata) = std::fs::metadata(&file.path) {
-                        if let Ok(modified) = metadata.modified() {
-                            let datetime: chrono::DateTime<chrono::Local> = modified.into();
-                            
-                            match format {
-                                DateFormat::Year => {
-                                    destination.push(datetime.format("%Y").to_string());
-                                }
-                                DateFormat::YearMonth => {
-                                    destination.push(datetime.format("%Y/%m").to_string());
-                                }
-                                DateFormat::YearMonthDay => {
-                                    destination.push(datetime.format("%Y/%m/%d").to_string());
-                                }
+                    if let Ok(metadata) = std::fs::metadata(&file.path)
+                        && let Ok(modified) = metadata.modified()
+                    {
+                        let datetime: chrono::DateTime<chrono::Local> = modified.into();
+
+                        match format {
+                            DateFormat::Year => {
+                                destination.push(datetime.format("%Y").to_string());
+                            }
+                            DateFormat::YearMonth => {
+                                destination.push(datetime.format("%Y/%m").to_string());
+                            }
+                            DateFormat::YearMonthDay => {
+                                destination.push(datetime.format("%Y/%m/%d").to_string());
                             }
                         }
                     }

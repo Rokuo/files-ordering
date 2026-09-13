@@ -1,8 +1,9 @@
+#![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use crate::core::rules::OrganizationRule;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub input_path: Option<PathBuf>,
     pub output_path: Option<PathBuf>,
@@ -11,52 +12,19 @@ pub struct AppConfig {
     pub behavior: BehaviorOptions,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScanOptions {
     pub recursive: bool,
     pub include_hidden: bool,
     pub max_depth: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BehaviorOptions {
     pub copy_instead_of_move: bool,
     pub overwrite_existing: bool,
     pub create_directories: bool,
     pub dry_run: bool,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            input_path: None,
-            output_path: None,
-            rules: Vec::new(),
-            scan_options: ScanOptions::default(),
-            behavior: BehaviorOptions::default(),
-        }
-    }
-}
-
-impl Default for ScanOptions {
-    fn default() -> Self {
-        Self {
-            recursive: false,
-            include_hidden: false,
-            max_depth: None,
-        }
-    }
-}
-
-impl Default for BehaviorOptions {
-    fn default() -> Self {
-        Self {
-            copy_instead_of_move: false,
-            overwrite_existing: false,
-            create_directories: true,
-            dry_run: true,
-        }
-    }
 }
 
 impl AppConfig {

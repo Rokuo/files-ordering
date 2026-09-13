@@ -1,6 +1,6 @@
-pub mod files;
 mod app;
 mod core;
+pub mod files;
 mod models;
 mod ui;
 
@@ -22,7 +22,7 @@ fn main() -> Result<(), eframe::Error> {
             .with_title("File Organizer"),
         ..Default::default()
     };
-    
+
     eframe::run_native(
         "File Organizer",
         options,

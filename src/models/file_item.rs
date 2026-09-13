@@ -1,3 +1,4 @@
+#![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -12,15 +13,17 @@ pub struct FileItem {
 impl FileItem {
     pub fn new(path: PathBuf) -> std::io::Result<Self> {
         let metadata = std::fs::metadata(&path)?;
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
-        
-        let extension = path.extension()
+
+        let extension = path
+            .extension()
             .and_then(|e| e.to_str())
             .map(|s| s.to_lowercase());
-        
+
         Ok(Self {
             path,
             name,

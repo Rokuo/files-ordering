@@ -1,2 +1,2 @@
-pub mod file_item;
 pub mod config;
+pub mod file_item;

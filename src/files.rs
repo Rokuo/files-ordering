@@ -1,14 +1,14 @@
-use std::{path::{Path, PathBuf}, fs, io};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 pub fn list_files(path: &Path) -> Result<Vec<PathBuf>, io::Error> {
     let mut files: Vec<PathBuf> = Vec::new();
     let path: Result<fs::ReadDir, io::Error> = fs::read_dir(path);
-    match path {
-        Ok(dir) => dir.into_iter().for_each(
-            |elem: Result<fs::DirEntry, std::io::Error>| files.push(elem.unwrap().path())
-        ),
-        Err(error) => return Err(error)
-    }
+    let dir = path?;
+    dir.into_iter()
+        .for_each(|elem: Result<fs::DirEntry, std::io::Error>| files.push(elem.unwrap().path()));
     Ok(files)
 }
 
@@ -26,20 +26,24 @@ pub fn sort_files_by_name_descending(mut files: Vec<PathBuf>) -> Vec<PathBuf> {
     files
 }
 
-pub fn sort_files_by_ext(mut files: Vec<PathBuf>,  exts: Vec<&str>) -> Vec<PathBuf> {
+pub fn sort_files_by_ext(mut files: Vec<PathBuf>, exts: Vec<&str>) -> Vec<PathBuf> {
     let rank = |file: &PathBuf| {
-        exts.iter().position(|e| Some(*e) == file.extension().and_then(|e| e.to_str())).unwrap_or(exts.len())
+        exts.iter()
+            .position(|e| Some(*e) == file.extension().and_then(|e| e.to_str()))
+            .unwrap_or(exts.len())
     };
-    files.sort_by(|a, b: &PathBuf| rank(a).cmp(&rank(b)).then_with(|| a.file_name().cmp(&b.file_name())));
+    files.sort_by(|a, b: &PathBuf| {
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| a.file_name().cmp(&b.file_name()))
+    });
     files
 }
 
 pub fn filter_files_by_ext(mut files: Vec<PathBuf>, exts: Vec<&str>) -> Vec<PathBuf> {
-    files.retain(|file| {
-        match file.extension() {
-            Some(ext) => exts.contains(&ext.to_str().unwrap()),
-            None => false
-        }
+    files.retain(|file| match file.extension() {
+        Some(ext) => exts.contains(&ext.to_str().unwrap()),
+        None => false,
     });
     files
 }
@@ -48,8 +52,8 @@ pub fn filter_files_by_ext(mut files: Vec<PathBuf>, exts: Vec<&str>) -> Vec<Path
 mod tests {
     use std::ffi::OsStr;
 
-    use tempfile::TempDir;
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_list_files_on_existing_folder() {
@@ -91,7 +95,8 @@ mod tests {
     fn test_filter_files_by_ext() {
         let dir: TempDir = tempfile::tempdir().unwrap();
         let extensions = vec!["txt", "png"];
-        let orig_files: Vec<&str> = vec!["sound.mp3", "aleks.txt", "file2.txt", "test.png", "bytes"];
+        let orig_files: Vec<&str> =
+            vec!["sound.mp3", "aleks.txt", "file2.txt", "test.png", "bytes"];
         std::fs::write(dir.path().join(orig_files[0]), b"test").unwrap();
         std::fs::write(dir.path().join(orig_files[1]), "hello").unwrap();
         std::fs::write(dir.path().join(orig_files[2]), "world").unwrap();
@@ -106,7 +111,8 @@ mod tests {
     fn test_sort_files_by_ext() {
         let dir: TempDir = tempfile::tempdir().unwrap();
         let extensions = vec!["txt", "png"];
-        let orig_files: Vec<&str> = vec!["sound.mp3", "file2.txt", "aleks.txt", "test.png", "bytes"];
+        let orig_files: Vec<&str> =
+            vec!["sound.mp3", "file2.txt", "aleks.txt", "test.png", "bytes"];
         std::fs::write(dir.path().join(orig_files[0]), b"test").unwrap();
         std::fs::write(dir.path().join(orig_files[1]), "hello").unwrap();
         std::fs::write(dir.path().join(orig_files[2]), "world").unwrap();
@@ -161,11 +167,11 @@ mod tests {
         let file: &str = "file.txt";
         std::fs::write(dir.path().join(file), b"test").unwrap();
 
-        let result: Result<(), io::Error> = move_file(&dir.path().join(file), &dir.path().join("new_file.txt"));
+        let result: Result<(), io::Error> =
+            move_file(&dir.path().join(file), &dir.path().join("new_file.txt"));
 
         assert!(result.is_ok());
         assert!(!dir.path().join(file).exists());
         assert!(dir.path().join("new_file.txt").exists());
     }
-
 }

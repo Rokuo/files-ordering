@@ -1,5 +1,6 @@
+#![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use crate::models::file_item::FileItem;
-use std::path::{Path};
+use std::path::Path;
 
 pub struct FileScanner {
     recursive: bool,
@@ -33,7 +34,7 @@ impl FileScanner {
 
     pub fn scan(&self, path: &Path) -> std::io::Result<Vec<FileItem>> {
         let mut files = Vec::new();
-        
+
         if self.recursive {
             self.scan_recursive(path, &mut files, 0)?;
         } else {
@@ -72,10 +73,10 @@ impl FileScanner {
         files: &mut Vec<FileItem>,
         current_depth: usize,
     ) -> std::io::Result<()> {
-        if let Some(max) = self.max_depth {
-            if current_depth >= max {
-                return Ok(());
-            }
+        if let Some(max) = self.max_depth
+            && current_depth >= max
+        {
+            return Ok(());
         }
 
         if !path.is_dir() {
@@ -143,7 +144,7 @@ impl ScanResult {
 
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    
+
     if bytes == 0 {
         return "0 B".to_string();
     }

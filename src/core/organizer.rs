@@ -1,8 +1,8 @@
+#![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use crate::core::file_scanner::FileScanner;
 use crate::core::rules::RuleEngine;
 use crate::models::file_item::FileItem;
-use std::path::PathBuf;
-
+use std::path::Path;
 pub struct Organizer {
     scanner: FileScanner,
     rule_engine: RuleEngine,
@@ -21,7 +21,12 @@ impl Organizer {
         self
     }
 
-    pub fn set_scanner_options(&mut self, recursive: bool, include_hidden: bool, max_depth: Option<usize>) {
+    pub fn set_scanner_options(
+        &mut self,
+        recursive: bool,
+        include_hidden: bool,
+        max_depth: Option<usize>,
+    ) {
         self.scanner = FileScanner::new()
             .recursive(recursive)
             .include_hidden(include_hidden)
@@ -41,11 +46,11 @@ impl Organizer {
         self.rule_engine.remove_rule(index);
     }
 
-    pub fn scan_directory(&self, path: &PathBuf) -> std::io::Result<Vec<FileItem>> {
+    pub fn scan_directory(&self, path: &Path) -> std::io::Result<Vec<FileItem>> {
         self.scanner.scan(path)
     }
 
-    pub fn apply_rules(&self, files: &mut [FileItem], output_base: &PathBuf) {
+    pub fn apply_rules(&self, files: &mut [FileItem], output_base: &Path) {
         for file in files.iter_mut() {
             let destination = self.rule_engine.apply_rules(file, output_base);
             file.destination = Some(destination);
@@ -62,12 +67,12 @@ impl Organizer {
 
                 // Copy or move the file
                 std::fs::copy(&file.path, destination)?;
-                
+
                 // If moving (not copying), remove the original
                 // std::fs::remove_file(&file.path)?;
             }
         }
-        
+
         Ok(())
     }
 }
