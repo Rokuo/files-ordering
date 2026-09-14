@@ -5,8 +5,19 @@ on:                               # WHEN it runs (triggers)
     branches: [dev]
 
 jobs:                             # WHAT runs; jobs run in parallel
+  demo:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        size: [small, large]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo "${{ matrix.size }} on ${{ matrix.os }}"
+      
   test:
+    name: Build and Test Rust Project  # shown in the Actions tab
     runs-on: ubuntu-latest        # WHERE: a brand-new virtual machine
     steps:                        # HOW: in order, top to bottom
       - uses: actions/checkout@v7 # a ready-made "action": clones your repo
-      - run: cargo test | tee test.log | grep -E '(test|error|fail)'       # a plain shell command
+      - run: cargo test       # a plain shell command
