@@ -1,0 +1,12 @@
+name: CI                          # shown in the repo's Actions tab
+
+on:                               # WHEN it runs (triggers)
+  pull_request:
+    branches: [dev]
+
+jobs:                             # WHAT runs; jobs run in parallel
+  test:
+    runs-on: ubuntu-latest        # WHERE: a brand-new virtual machine
+    steps:                        # HOW: in order, top to bottom
+      - uses: actions/checkout@v7 # a ready-made "action": clones your repo
+      - run: cargo test | tee test.log | grep -E '(test|error|fail)'       # a plain shell command
