@@ -23,6 +23,6 @@ jobs:                             # WHAT runs; jobs run in parallel
     runs-on: ${{ matrix.os }}       # WHERE: a brand-new virtual machine from matrix.os
     steps:                          # HOW: in order, top to bottom
       - uses: actions/checkout@v7 # a ready-made "action": clones your repo
-      - run : rustup update stable
+      - run: rustup update stable
       - uses: Swatinem/rust-cache@v2 
       - run: cargo test       # a plain shell command

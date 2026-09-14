@@ -1,8 +1,11 @@
 mod app;
 mod core;
 pub mod files;
+mod meta;
 mod models;
 mod ui;
+
+use meta::APP_NAME;
 
 // fn main() {
 //     let path: PathBuf = PathBuf::from(r".");
@@ -19,12 +22,12 @@ fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
-            .with_title("File Organizer"),
+            .with_title(APP_NAME),
         ..Default::default()
     };
 
     eframe::run_native(
-        "File Organizer",
+        APP_NAME,
         options,
         Box::new(|_cc| Ok(Box::new(app::FileOrganizerApp::default()))),
     )

@@ -1,3 +1,4 @@
+use crate::meta::APP_NAME;
 use crate::models::file_item::FileItem;
 
 pub struct FileOrganizerApp {
@@ -25,7 +26,7 @@ impl Default for FileOrganizerApp {
 impl eframe::App for FileOrganizerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("File Organizer");
+            ui.heading(APP_NAME);
 
             ui.separator();
 
