@@ -41,6 +41,7 @@ pub fn render(ui: &mut egui::Ui, app: &mut FileOrganizerApp) {
     if let Some(input) = &app.selected_input_path
         && ui.button("Next: Configure Rules").clicked()
     {
+        let coucou = "coucou";
         list_files(Path::new(input))
             .map(|files| {
                 app.files_to_organize = files

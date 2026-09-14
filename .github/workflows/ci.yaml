@@ -6,6 +6,15 @@ on:                               # WHEN it runs (triggers)
 
 jobs:                             # WHAT runs; jobs run in parallel
   test:
+    name: build and testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable
+      - uses: Swatinem/rust-cache@v2 
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+  test:
     name: Test on ${{ matrix.os }}  # shown in the Actions tab
     strategy:
       fail-fast: false
@@ -15,4 +24,5 @@ jobs:                             # WHAT runs; jobs run in parallel
     steps:                          # HOW: in order, top to bottom
       - uses: actions/checkout@v7 # a ready-made "action": clones your repo
       - run : rustup update stable
+      - uses: Swatinem/rust-cache@v2 
       - run: cargo test       # a plain shell command
