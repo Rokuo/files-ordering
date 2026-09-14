@@ -9,9 +9,10 @@ jobs:                             # WHAT runs; jobs run in parallel
     name: Test on ${{ matrix.os }}  # shown in the Actions tab
     strategy:
       fail-fast: false
-      matrix:
+      matrix:                       # matrice of virtual machines to run the job on
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}       # WHERE: a brand-new virtual machine from matrix.os
     steps:                          # HOW: in order, top to bottom
       - uses: actions/checkout@v7 # a ready-made "action": clones your repo
+      - run : rustup update stable
       - run: cargo test       # a plain shell command
