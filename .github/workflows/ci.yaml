@@ -5,8 +5,7 @@ on:                               # WHEN it runs (triggers)
     branches: [dev]
 
 jobs:                             # WHAT runs; jobs run in parallel
-  test:
-    name: build and testing
+  build and testing:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
