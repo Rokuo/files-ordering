@@ -5,7 +5,8 @@ on:                               # WHEN it runs (triggers)
     branches: [dev]
 
 jobs:                             # WHAT runs; jobs run in parallel
-  build and testing:
+  build_and_testing:                  # job name; can be anything
+    name: build and testing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -13,7 +14,7 @@ jobs:                             # WHAT runs; jobs run in parallel
       - uses: Swatinem/rust-cache@v2 
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
-  test:
+  test_running:
     name: Test on ${{ matrix.os }}  # shown in the Actions tab
     strategy:
       fail-fast: false
