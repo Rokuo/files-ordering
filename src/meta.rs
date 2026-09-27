@@ -2,4 +2,4 @@
 /// (which names the folder where eframe saves app state).
 ///
 /// "Ordo" is a working name: change it here and everything follows.
-pub const APP_NAME: &str = "Ordo";
+pub const APP_NAME: &str = "App";
