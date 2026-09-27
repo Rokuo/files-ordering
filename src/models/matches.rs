@@ -58,4 +58,15 @@ mod tests {
         // assert
         assert_eq!(condition, back);
     }
+    #[test]
+    fn test_size_condition_serializes_as_nested_objects() {
+        // arrange
+        let condition = Condition::Size(SizeTest::LargerThan(512_000));
+
+        // act
+        let json = serde_json::to_string(&condition).unwrap();
+
+        // assert
+        assert_eq!(json, r#"{"Size":{"LargerThan":512000}}"#);
+    }
 }
