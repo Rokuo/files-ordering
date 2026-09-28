@@ -1,6 +1,6 @@
 #![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
-use std::path::PathBuf;
 use chrono::NaiveDate;
+use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct FileItem {
     pub path: PathBuf,

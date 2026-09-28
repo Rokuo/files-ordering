@@ -88,9 +88,19 @@ impl Condition {
     pub fn matches(&self, _arg: &FileItem) -> bool {
         match self {
             Condition::Stem(name_test) => name_test.matches(&_arg.name),
-            Condition::Extension(extension_test) => extension_test.matches(&_arg.extension.clone().unwrap_or_default().as_str()),
-            Condition::Created(date_test) => date_test.matches(&_arg.created_at.unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())),
-            Condition::Modified(date_test) => date_test.matches(&_arg.modified_at.unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())),
+            Condition::Extension(extension_test) => {
+                extension_test.matches(&_arg.extension.clone().unwrap_or_default().as_str())
+            }
+            Condition::Created(date_test) => date_test.matches(
+                &_arg
+                    .created_at
+                    .unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
+            ),
+            Condition::Modified(date_test) => date_test.matches(
+                &_arg
+                    .modified_at
+                    .unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
+            ),
             Condition::Size(size_test) => size_test.matches(&_arg.size),
         }
     }
@@ -160,7 +170,6 @@ mod tests {
         let testbefore: bool = datebefore.matches(&NaiveDate::from_ymd_opt(2022, 12, 31).unwrap());
         let testnotbefore: bool = datebefore.matches(&NaiveDate::from_ymd_opt(2023, 1, 2).unwrap());
 
-
         // assert
         assert_eq!(testafter, true);
         assert_eq!(testnotafter, false);
@@ -172,7 +181,8 @@ mod tests {
     fn test_extension_condition_matches() {
         // arrange
         let extension_is_one_of = ExtensionTest::IsOneOf(vec!["txt".to_string(), "md".to_string()]);
-        let extension_is_not_one_of = ExtensionTest::IsNotOneOf(vec!["jpg".to_string(), "png".to_string()]);
+        let extension_is_not_one_of =
+            ExtensionTest::IsNotOneOf(vec!["jpg".to_string(), "png".to_string()]);
 
         // act
         let test_is_one_of: bool = ExtensionTest::matches(&extension_is_one_of, "txt");
@@ -206,7 +216,8 @@ mod tests {
     fn test_condition_condition_matches() {
         // arrange
         let condition_name = Condition::Stem(NameTest::StartsWith("test".to_string()));
-        let condition_extension = Condition::Extension(ExtensionTest::IsOneOf(vec!["txt".to_string()]));
+        let condition_extension =
+            Condition::Extension(ExtensionTest::IsOneOf(vec!["txt".to_string()]));
         let condition_size = Condition::Size(SizeTest::LargerThan(512_000));
 
         let file_item = FileItem {

@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use crate::models::destination::Destination;
+use crate::models::file_item::FileItem;
 use crate::models::history::History;
 use crate::models::matches::{Condition, MatchMode};
-use crate::models::file_item::FileItem;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -34,10 +34,10 @@ impl Rule {
 mod tests {
     use super::*;
     use crate::models::destination::Rename;
+    use crate::models::file_item::FileItem;
     use crate::models::matches::{DateTest, ExtensionTest, NameTest, SizeTest};
     use chrono::NaiveDate;
     use std::path::PathBuf;
-    use crate::models::file_item::FileItem;
 
     fn sample_file_item() -> FileItem {
         crate::models::file_item::FileItem {
