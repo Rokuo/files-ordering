@@ -1,6 +1,6 @@
 #![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use std::path::PathBuf;
-
+use chrono::NaiveDate;
 #[derive(Debug, Clone)]
 pub struct FileItem {
     pub path: PathBuf,
@@ -8,6 +8,8 @@ pub struct FileItem {
     pub extension: Option<String>,
     pub size: u64,
     pub destination: Option<PathBuf>,
+    pub created_at: Option<NaiveDate>,
+    pub modified_at: Option<NaiveDate>,
 }
 
 impl FileItem {
@@ -30,6 +32,14 @@ impl FileItem {
             extension,
             size: metadata.len(),
             destination: None,
+            created_at: metadata.created().ok().map(|t| {
+                let datetime: chrono::DateTime<chrono::Utc> = t.into();
+                datetime.naive_utc().date()
+            }),
+            modified_at: metadata.modified().ok().map(|t| {
+                let datetime: chrono::DateTime<chrono::Utc> = t.into();
+                datetime.naive_utc().date()
+            }),
         })
     }
 }
