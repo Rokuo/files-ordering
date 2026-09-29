@@ -16,7 +16,7 @@ impl FileItem {
     pub fn new(path: PathBuf) -> std::io::Result<Self> {
         let metadata = std::fs::metadata(&path)?;
         let name = path
-            .file_name()
+            .file_stem()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
@@ -33,12 +33,12 @@ impl FileItem {
             size: metadata.len(),
             destination: None,
             created_at: metadata.created().ok().map(|t| {
-                let datetime: chrono::DateTime<chrono::Utc> = t.into();
-                datetime.naive_utc().date()
+                let datetime: chrono::DateTime<chrono::Local> = t.into();
+                datetime.date_naive()
             }),
             modified_at: metadata.modified().ok().map(|t| {
-                let datetime: chrono::DateTime<chrono::Utc> = t.into();
-                datetime.naive_utc().date()
+                let datetime: chrono::DateTime<chrono::Local> = t.into();
+                datetime.date_naive()
             }),
         })
     }

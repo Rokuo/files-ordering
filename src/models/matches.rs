@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use chrono::NaiveDate;
-use egui::accesskit::AriaCurrent::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::models::file_item::FileItem;
@@ -32,18 +31,15 @@ impl NameTest {
 pub enum DateTest {
     After(NaiveDate),
     Before(NaiveDate),
+    On(NaiveDate),
 }
+
 impl DateTest {
     fn matches(&self, arg: &NaiveDate) -> bool {
         match self {
-            DateTest::After(_date) => {
-                // Implement logic to check if the date is after the specified date
-                arg >= _date
-            }
-            DateTest::Before(_date) => {
-                // Implement logic to check if the date is before the specified date
-                arg < _date
-            }
+            DateTest::After(date) => arg > date,
+            DateTest::Before(date) => arg < date,
+            DateTest::On(date) => arg == date,
         }
     }
 }
@@ -70,8 +66,12 @@ pub enum ExtensionTest {
 impl ExtensionTest {
     fn matches(&self, arg: &str) -> bool {
         match self {
-            ExtensionTest::IsOneOf(extensions) => extensions.iter().any(|ext| ext == arg),
-            ExtensionTest::IsNotOneOf(extensions) => !extensions.iter().any(|ext| ext == arg),
+            ExtensionTest::IsOneOf(extensions) => {
+                extensions.iter().any(|ext| ext.eq_ignore_ascii_case(arg))
+            }
+            ExtensionTest::IsNotOneOf(extensions) => {
+                !extensions.iter().any(|ext| ext.eq_ignore_ascii_case(arg))
+            }
         }
     }
 }
@@ -85,23 +85,19 @@ pub enum Condition {
     Size(SizeTest),
 }
 impl Condition {
-    pub fn matches(&self, _arg: &FileItem) -> bool {
+    pub fn matches(&self, file: &FileItem) -> bool {
         match self {
-            Condition::Stem(name_test) => name_test.matches(&_arg.name),
+            Condition::Stem(name_test) => name_test.matches(&file.name),
             Condition::Extension(extension_test) => {
-                extension_test.matches(&_arg.extension.clone().unwrap_or_default().as_str())
+                extension_test.matches(file.extension.as_deref().unwrap_or_default())
             }
-            Condition::Created(date_test) => date_test.matches(
-                &_arg
-                    .created_at
-                    .unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
-            ),
-            Condition::Modified(date_test) => date_test.matches(
-                &_arg
-                    .modified_at
-                    .unwrap_or(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
-            ),
-            Condition::Size(size_test) => size_test.matches(&_arg.size),
+            Condition::Created(date_test) => {
+                file.created_at.is_some_and(|date| date_test.matches(&date))
+            }
+            Condition::Modified(date_test) => file
+                .modified_at
+                .is_some_and(|date| date_test.matches(&date)),
+            Condition::Size(size_test) => size_test.matches(&file.size),
         }
     }
 }
@@ -150,12 +146,12 @@ mod tests {
         let testnotend: bool = nameend.matches("test_file");
 
         // assert
-        assert_eq!(teststart, true);
-        assert_eq!(testend, true);
-        assert_eq!(testcontains, true);
-        assert_eq!(testnotcontains, false);
-        assert_eq!(testnotstart, false);
-        assert_eq!(testnotend, false);
+        assert!(teststart);
+        assert!(testend);
+        assert!(testcontains);
+        assert!(!testnotcontains);
+        assert!(!testnotstart);
+        assert!(!testnotend);
     }
 
     #[test]
@@ -171,10 +167,10 @@ mod tests {
         let testnotbefore: bool = datebefore.matches(&NaiveDate::from_ymd_opt(2023, 1, 2).unwrap());
 
         // assert
-        assert_eq!(testafter, true);
-        assert_eq!(testnotafter, false);
-        assert_eq!(testbefore, true);
-        assert_eq!(testnotbefore, false);
+        assert!(testafter);
+        assert!(!testnotafter);
+        assert!(testbefore);
+        assert!(!testnotbefore);
     }
 
     #[test]
@@ -189,8 +185,8 @@ mod tests {
         let test_is_not_one_of: bool = ExtensionTest::matches(&extension_is_not_one_of, "txt");
 
         // assert
-        assert_eq!(test_is_one_of, true);
-        assert_eq!(test_is_not_one_of, true);
+        assert!(test_is_one_of);
+        assert!(test_is_not_one_of);
     }
 
     #[test]
@@ -206,10 +202,10 @@ mod tests {
         let test_not_smaller_than: bool = SizeTest::matches(&size_smaller_than, &600_000);
 
         // assert
-        assert_eq!(test_larger_than, true);
-        assert_eq!(test_not_larger_than, false);
-        assert_eq!(test_smaller_than, true);
-        assert_eq!(test_not_smaller_than, false);
+        assert!(test_larger_than);
+        assert!(!test_not_larger_than);
+        assert!(test_smaller_than);
+        assert!(!test_not_smaller_than);
     }
 
     #[test]
@@ -236,8 +232,64 @@ mod tests {
         let test_size: bool = condition_size.matches(&file_item);
 
         // assert
-        assert_eq!(test_name, true);
-        assert_eq!(test_extension, true);
-        assert_eq!(test_size, true);
+        assert!(test_name);
+        assert!(test_extension);
+        assert!(test_size);
+    }
+
+    fn day(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).unwrap()
+    }
+
+    fn file_with_dates(created_at: Option<NaiveDate>, modified_at: Option<NaiveDate>) -> FileItem {
+        FileItem {
+            path: std::path::PathBuf::new(),
+            name: "test_file".to_string(),
+            extension: Some("txt".to_string()),
+            size: 600_000,
+            destination: None,
+            created_at,
+            modified_at,
+        }
+    }
+
+    #[test]
+    fn test_date_boundary_is_strict_on_both_sides() {
+        let limit = day(2023, 1, 1);
+
+        // the boundary day itself
+        assert!(!DateTest::After(limit).matches(&limit));
+        assert!(!DateTest::Before(limit).matches(&limit));
+        assert!(DateTest::On(limit).matches(&limit));
+
+        // and a day either side is unaffected
+        assert!(DateTest::After(limit).matches(&day(2023, 1, 2)));
+        assert!(DateTest::Before(limit).matches(&day(2022, 12, 31)));
+        assert!(!DateTest::On(limit).matches(&day(2023, 1, 2)));
+    }
+
+    #[test]
+    fn test_absent_date_never_matches() {
+        let file = file_with_dates(None, None);
+
+        assert!(!Condition::Created(DateTest::After(day(2020, 1, 1))).matches(&file));
+        assert!(!Condition::Created(DateTest::Before(day(2020, 1, 1))).matches(&file));
+        assert!(!Condition::Modified(DateTest::After(day(2020, 1, 1))).matches(&file));
+        assert!(!Condition::Modified(DateTest::Before(day(2020, 1, 1))).matches(&file));
+
+        let dated = file_with_dates(Some(day(2023, 6, 15)), None);
+        assert!(Condition::Created(DateTest::After(day(2020, 1, 1))).matches(&dated));
+    }
+
+    #[test]
+    fn test_extension_condition_does_not_match() {
+        let is_one_of = ExtensionTest::IsOneOf(vec!["txt".to_string(), "md".to_string()]);
+        let is_not_one_of = ExtensionTest::IsNotOneOf(vec!["jpg".to_string(), "png".to_string()]);
+
+        assert!(!is_one_of.matches("jpg"));
+        assert!(!is_not_one_of.matches("jpg"));
+
+        assert!(is_one_of.matches("md"));
+        assert!(is_not_one_of.matches("md"));
     }
 }
