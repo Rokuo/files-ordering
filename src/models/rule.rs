@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::models::destination::Destination;
+use crate::models::file_item::FileItem;
 use crate::models::history::History;
 use crate::models::matches::{Condition, MatchMode};
 use serde::{Deserialize, Serialize};
@@ -14,15 +15,51 @@ pub struct Rule {
     pub last_run: Option<History>,
 }
 
+impl Rule {
+    pub fn matches(&self, file_item: &FileItem) -> bool {
+        // A rule with no conditions filters nothing, so it takes every file.
+        // This has to be decided before the match mode is consulted: `all()`
+        // on an empty list is true and `any()` is false, so without this the
+        // same empty rule would behave differently in All than in Any.
+        if self.conditions.is_empty() {
+            return true;
+        }
+
+        match self.match_mode {
+            MatchMode::Any => self
+                .conditions
+                .iter()
+                .any(|condition| condition.matches(file_item)),
+            MatchMode::All => self
+                .conditions
+                .iter()
+                .all(|condition| condition.matches(file_item)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::destination::Rename;
+    use crate::models::file_item::FileItem;
     use crate::models::matches::{DateTest, ExtensionTest, NameTest, SizeTest};
     use chrono::NaiveDate;
     use std::path::PathBuf;
 
-    fn sample_rule() -> Rule {
+    fn sample_file_item() -> FileItem {
+        crate::models::file_item::FileItem {
+            path: std::path::PathBuf::new(),
+            name: "test_file".to_string(),
+            extension: Some("png".to_string()),
+            size: 600_000,
+            destination: None,
+            created_at: NaiveDate::from_ymd_opt(2023, 6, 15),
+            modified_at: NaiveDate::from_ymd_opt(2023, 6, 20),
+        }
+    }
+
+    fn sample_rule(match_mode: MatchMode) -> Rule {
         Rule {
             name: "Sample Rule".to_string(),
             destination: Destination {
@@ -33,7 +70,7 @@ mod tests {
                     replacement: "holiday-$1".to_string(),
                 }),
             },
-            match_mode: MatchMode::All,
+            match_mode,
             conditions: vec![
                 Condition::Stem(NameTest::StartsWith("test".to_string())),
                 Condition::Stem(NameTest::Contains("invoice".to_string())),
@@ -56,7 +93,7 @@ mod tests {
     #[test]
     fn test_rule_serialization() {
         // arrange
-        let rule: Rule = sample_rule();
+        let rule: Rule = sample_rule(MatchMode::All);
 
         // act
         let json: String = serde_json::to_string(&rule).unwrap();
@@ -69,7 +106,7 @@ mod tests {
     #[test]
     fn test_rule_serialization_as_nested_json() {
         // arrange
-        let rule: Rule = sample_rule();
+        let rule: Rule = sample_rule(MatchMode::All);
 
         // act
         let json: String = serde_json::to_string(&rule).unwrap();
@@ -78,5 +115,50 @@ mod tests {
             json,
             r#"{"name":"Sample Rule","destination":{"folder":"/path/to/destination","sub_folder_pattern":"{year}/{month}","rename":{"pattern":"^IMG_(\\d+)","replacement":"holiday-$1"}},"match_mode":"All","conditions":[{"Stem":{"StartsWith":"test"}},{"Stem":{"Contains":"invoice"}},{"Size":{"LargerThan":1024}},{"Created":{"After":"2023-01-01"}},{"Modified":{"Before":"2024-01-01"}},{"Extension":{"IsOneOf":["jpg","png"]}}],"last_run":null}"#
         );
+    }
+
+    /// The sample file satisfies some conditions but not all of them, so Any
+    /// accepts it and All rejects it. One fixture, two modes, opposite answers.
+    #[test]
+    fn test_any_condition_matches() {
+        // arrange
+        let rule = sample_rule(MatchMode::Any);
+        let file_item = sample_file_item();
+
+        // act
+        let matched = rule.matches(&file_item);
+
+        // assert
+        assert!(matched);
+    }
+
+    #[test]
+    fn test_all_conditions_must_match() {
+        // arrange
+        let rule = sample_rule(MatchMode::All);
+        let file_item = sample_file_item();
+
+        // act
+        let matched = rule.matches(&file_item);
+
+        // assert
+        assert!(!matched);
+    }
+
+    /// A rule with no conditions filters nothing, so it takes every file —
+    /// and it has to give the same answer in both modes. Without the early
+    /// return, `all()` on an empty list is true while `any()` is false.
+    #[test]
+    fn test_rule_with_no_conditions_matches_everything() {
+        // arrange
+        let file_item = sample_file_item();
+        let mut all_mode = sample_rule(MatchMode::All);
+        all_mode.conditions.clear();
+        let mut any_mode = sample_rule(MatchMode::Any);
+        any_mode.conditions.clear();
+
+        // act / assert
+        assert!(all_mode.matches(&file_item));
+        assert!(any_mode.matches(&file_item));
     }
 }
