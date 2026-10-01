@@ -103,21 +103,76 @@ mod tests {
 
         // assert — an unknown token is an error the dry run can show, never
         // a panic and never the braces left in the path.
-        assert!(rendered.is_err());
+        assert_eq!(
+            rendered,
+            Err(PatternError::UnsupportedToken("colour".into()))
+        )
     }
 
-    // Still to write, once the two above are green:
-    //
-    //   - literal text survives:      "photos/{year}"  ->  photos/2024
-    //   - the remaining tokens:       "{name}.{ext}"   ->  IMG_4471.heic
-    //   - an unclosed brace is an error:  "{year"
-    //   - an empty token is an error:     "{}"
-    //   - tokens that arrive later are errors today: {type}, {size-band},
-    //     {parent}, {counter}, {match} — this is what tells you the parser
-    //     still rejects them properly once p1-type adds the first two.
-    //   - a missing value: {ext} on a file whose extension is None.
-    //     Decide first: error out, or substitute a folder name? Erroring
-    //     fails a whole run over one odd file; substituting puts it in
-    //     something like "no-extension". Write the test once you have picked.
-    //   - an empty pattern: does it mean the destination root itself?
+    #[test]
+    fn test_render_folder_rejects_an_unclosed_brace() {
+        // arrange
+        let destination = destination_with("{year");
+        let file = sample_file();
+
+        // act
+        let rendered = destination.render_folder(&file);
+
+        // assert — an unclosed brace is an error the dry run can show, never
+        // a panic and never the braces left in the path.
+        assert_eq!(rendered, Err(PatternError::InvalidPattern("{year".into())))
+    }
+
+    #[test]
+    fn test_render_folder_text_survives_with_tags() {
+        let destination = destination_with("photos/{year}");
+        let file = sample_file();
+
+        let rendered = destination.render_folder(&file).unwrap();
+
+        assert_eq!(rendered, PathBuf::from("photos").join("2024"));
+    }
+
+    #[test]
+    fn test_render_folder_only_tags() {
+        let destination = destination_with("{name}.{ext}");
+        let file = sample_file();
+        let rendered = destination.render_folder(&file).unwrap();
+        assert_eq!(rendered, PathBuf::from("IMG_4471.heic"));
+    }
+
+    #[test]
+    fn test_render_folder_rejects_empty_tags() {
+        let destination = destination_with("{}.{}");
+        let file = sample_file();
+        let rendered = destination.render_folder(&file);
+        assert_eq!(rendered, Err(PatternError::UnsupportedToken("".into())))
+    }
+
+    #[test]
+    fn test_render_folder_rejects_unhandled_tags() {
+        let destination = destination_with("{type}");
+        let file = sample_file();
+        let rendered = destination.render_folder(&file);
+        assert_eq!(rendered, Err(PatternError::UnsupportedToken("type".into())))
+    }
+
+    #[test]
+    fn test_render_folder_dont_rejects_empty_values() {
+        let destination = destination_with("{ext}");
+        let file = FileItem {
+            extension: None,
+            ..sample_file()
+        };
+        let rendered = destination.render_folder(&file);
+        assert_eq!(rendered.unwrap(), PathBuf::from("no-extension"));
+    }
+
+    #[test]
+    fn test_render_folder_dont_rejects_empty_pattern() {
+        let destination = destination_with("");
+        let file = sample_file();
+        let rendered = destination.render_folder(&file);
+        assert_eq!(rendered.unwrap(), PathBuf::from(""));
+    }
 }
