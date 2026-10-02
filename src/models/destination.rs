@@ -151,10 +151,13 @@ mod tests {
 
     #[test]
     fn test_render_folder_rejects_unhandled_tags() {
-        let destination = destination_with("{type}");
+        let destination = destination_with("{parent}");
         let file = sample_file();
         let rendered = destination.render_folder(&file);
-        assert_eq!(rendered, Err(PatternError::UnsupportedToken("type".into())))
+        assert_eq!(
+            rendered,
+            Err(PatternError::UnsupportedToken("parent".into()))
+        )
     }
 
     #[test]
@@ -174,5 +177,21 @@ mod tests {
         let file = sample_file();
         let rendered = destination.render_folder(&file);
         assert_eq!(rendered.unwrap(), PathBuf::from(""));
+    }
+
+    #[test]
+    fn test_value_all_types() {
+        let file = sample_file();
+        let destination = destination_with("{type}/{size-band}/{year}/{month}/{day}/{name}.{ext}");
+        let rendered = destination.render_folder(&file).unwrap();
+        assert_eq!(
+            rendered,
+            PathBuf::from("photos")
+                .join("small")
+                .join("2024")
+                .join("03")
+                .join("14")
+                .join("IMG_4471.heic")
+        );
     }
 }
