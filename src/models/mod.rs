@@ -4,5 +4,6 @@ pub mod error;
 pub mod file_item;
 pub mod history;
 pub mod matches;
+pub mod plan;
 pub mod rule;
 pub mod token;

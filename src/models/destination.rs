@@ -85,11 +85,7 @@ mod tests {
         let rendered = destination.render_folder(&file).unwrap();
 
         // assert — built with `join` rather than a "2024/03/14" literal, so
-        // the separator is whatever this platform uses. A single segment
-        // literally named "2024/03/14" would fail here.
         assert_eq!(rendered, PathBuf::from("2024").join("03").join("14"));
-
-        // And it read the modified date, not the created one (2023/11/02).
     }
 
     #[test]
@@ -101,8 +97,7 @@ mod tests {
         // act
         let rendered = destination.render_folder(&file);
 
-        // assert — an unknown token is an error the dry run can show, never
-        // a panic and never the braces left in the path.
+        // assert
         assert_eq!(
             rendered,
             Err(PatternError::UnsupportedToken("colour".into()))
@@ -118,8 +113,7 @@ mod tests {
         // act
         let rendered = destination.render_folder(&file);
 
-        // assert — an unclosed brace is an error the dry run can show, never
-        // a panic and never the braces left in the path.
+        // assert
         assert_eq!(rendered, Err(PatternError::InvalidPattern("{year".into())))
     }
 

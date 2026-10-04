@@ -61,7 +61,8 @@ impl Token {
             Token::Extension => file_item
                 .extension
                 .clone()
-                .unwrap_or_else(|| NO_EXTENSION.to_string()),
+                .unwrap_or_else(|| NO_EXTENSION.to_string())
+                .to_lowercase(),
             Token::Type => {
                 if let Some(ext) = &file_item.extension {
                     let ext_lower = ext.to_lowercase();
@@ -226,5 +227,19 @@ mod tests {
         assert_eq!(Token::Type.value(&vid_file), "video");
         assert_eq!(Token::Type.value(&doc_file), "documents");
         assert_eq!(Token::Type.value(&ukn_file), UNKNOWN_TYPE);
+    }
+
+    /// `{ext}` names a folder, so it is lower-cased even though the struct
+    /// keeps the original case: on Linux a verbatim `HEIC` and `heic` would
+    /// be two separate folders for one file type.
+    #[test]
+    fn test_value_lowercases_the_extension_folder() {
+        let file = FileItem {
+            extension: Some("HEIC".to_string()),
+            ..sample_file()
+        };
+
+        assert_eq!(Token::Extension.value(&file), "heic");
+        assert_eq!(Token::Type.value(&file), "photos");
     }
 }

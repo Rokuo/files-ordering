@@ -1,10 +1,14 @@
 #![allow(dead_code)]
 
 use crate::models::destination::Destination;
+use crate::models::error::pattern_error::PatternError;
 use crate::models::file_item::FileItem;
 use crate::models::history::History;
 use crate::models::matches::{Condition, MatchMode};
+use crate::models::plan::{ConflictKind, Plan, PlanStatus, PlannedMove};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Rule {
@@ -17,10 +21,6 @@ pub struct Rule {
 
 impl Rule {
     pub fn matches(&self, file_item: &FileItem) -> bool {
-        // A rule with no conditions filters nothing, so it takes every file.
-        // This has to be decided before the match mode is consulted: `all()`
-        // on an empty list is true and `any()` is false, so without this the
-        // same empty rule would behave differently in All than in Any.
         if self.conditions.is_empty() {
             return true;
         }
@@ -35,6 +35,50 @@ impl Rule {
                 .iter()
                 .all(|condition| condition.matches(file_item)),
         }
+    }
+
+    pub fn plan(&self, files: &[FileItem]) -> Result<Plan, PatternError> {
+        let mut plan = Plan {
+            entries: Vec::new(),
+        };
+        let mut claimed: HashSet<PathBuf> = HashSet::new();
+        let mut contested: HashSet<PathBuf> = HashSet::new();
+
+        for file_item in files {
+            if !self.matches(file_item) {
+                continue;
+            }
+
+            let destination = self
+                .destination
+                .folder
+                .join(self.destination.render_folder(file_item)?)
+                .join(file_item.file_name());
+
+            if !claimed.insert(destination.clone()) {
+                contested.insert(destination.clone());
+            }
+
+            let status = if destination == file_item.path {
+                PlanStatus::Skipped
+            } else {
+                PlanStatus::New
+            };
+
+            plan.entries.push(PlannedMove {
+                source: file_item.path.clone(),
+                destination,
+                status,
+            });
+        }
+
+        plan.entries
+            .iter_mut()
+            .filter(|entry| entry.status == PlanStatus::New)
+            .filter(|entry| contested.contains(&entry.destination))
+            .for_each(|entry| entry.status = PlanStatus::Conflict(ConflictKind::InPlan));
+
+        Ok(plan)
     }
 }
 
@@ -145,9 +189,6 @@ mod tests {
         assert!(!matched);
     }
 
-    /// A rule with no conditions filters nothing, so it takes every file —
-    /// and it has to give the same answer in both modes. Without the early
-    /// return, `all()` on an empty list is true while `any()` is false.
     #[test]
     fn test_rule_with_no_conditions_matches_everything() {
         // arrange
@@ -160,5 +201,119 @@ mod tests {
         // act / assert
         assert!(all_mode.matches(&file_item));
         assert!(any_mode.matches(&file_item));
+    }
+
+    #[test]
+    fn test_plan_builds_the_full_destination_path() {
+        // arrange
+        let rule = sample_rule(MatchMode::Any);
+        let file_item = sample_file_item();
+        let files = vec![file_item];
+
+        // act
+        let plan = rule.plan(&files).unwrap();
+
+        // assert
+        assert_eq!(plan.entries.len(), 1);
+        assert_eq!(
+            plan.entries[0].destination,
+            PathBuf::from("/path/to/destination")
+                .join("2023")
+                .join("06")
+                .join("test_file.png")
+        );
+        assert_eq!(plan.entries[0].status, PlanStatus::New);
+    }
+
+    #[test]
+    fn test_plan_leaves_distinct_destinations_as_new() {
+        // arrange
+        let rule = sample_rule(MatchMode::Any);
+        let files = vec![
+            sample_file_item(),
+            FileItem {
+                name: "another_file".to_string(),
+                ..sample_file_item()
+            },
+        ];
+
+        // act
+        let plan = rule.plan(&files).unwrap();
+
+        // assert
+        assert_eq!(plan.entries.len(), 2);
+        assert_eq!(plan.entries[0].status, PlanStatus::New);
+        assert_eq!(plan.entries[1].status, PlanStatus::New);
+    }
+
+    #[test]
+    fn test_plan_with_invalid_pattern() {
+        let mut rule = sample_rule(MatchMode::Any);
+        rule.destination.sub_folder_pattern = "{invalid_token}".to_string();
+        let file_one = sample_file_item();
+        let file_two = FileItem {
+            name: "another_file".to_string(),
+            ..sample_file_item()
+        };
+        let files = vec![file_one, file_two];
+        let plan_result = rule.plan(&files);
+
+        assert!(plan_result.is_err());
+        assert_eq!(
+            plan_result,
+            Err(PatternError::UnsupportedToken("invalid_token".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_plan_with_multiple_matching_name_raise_conflict() {
+        let mut rule = sample_rule(MatchMode::Any);
+        rule.conditions
+            .push(Condition::Stem(NameTest::Contains("test".to_string())));
+        let file_one = sample_file_item();
+        let file_two = sample_file_item();
+        let files = vec![file_one, file_two];
+        let plan_result = rule.plan(&files);
+
+        assert!(plan_result.is_ok());
+        assert!(
+            plan_result
+                .unwrap()
+                .entries
+                .iter()
+                .find(|entry| entry.status == PlanStatus::Conflict(ConflictKind::InPlan))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_plan_with_files_not_matching_conditions() {
+        let rule = sample_rule(MatchMode::All);
+        let file_item = FileItem {
+            name: "non_matching_file".to_string(),
+            ..sample_file_item()
+        };
+        let files = vec![file_item];
+        let plan_result = rule.plan(&files);
+
+        assert!(plan_result.is_ok());
+        assert_eq!(plan_result.unwrap().entries.len(), 0);
+    }
+
+    #[test]
+    fn test_plan_with_files_matching_conditions_skipped() {
+        let rule = sample_rule(MatchMode::Any);
+        let file_item = FileItem {
+            name: "test_file".to_string(),
+            extension: Some("png".to_string()),
+            path: PathBuf::from("/path/to/destination/2023/06/test_file.png"),
+            ..sample_file_item()
+        };
+        let files = vec![file_item];
+        let plan_result = rule.plan(&files);
+
+        assert!(plan_result.is_ok());
+        let plan = plan_result.unwrap();
+        assert_eq!(plan.entries[0].status, PlanStatus::Skipped);
     }
 }
