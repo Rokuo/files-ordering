@@ -13,6 +13,7 @@ pub fn list_files(path: &Path) -> Result<Vec<PathBuf>, io::Error> {
 }
 
 pub fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
+    fs::create_dir_all(to.parent().unwrap())?;
     fs::rename(from, to)
 }
 

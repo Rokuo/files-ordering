@@ -1,7 +1,9 @@
 #![allow(dead_code)] // old engine — removed in Phase 1 "Retire the old engine"
 use chrono::NaiveDate;
+use serde::Serialize;
 use std::path::PathBuf;
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct FileItem {
     pub path: PathBuf,
     pub name: String,
