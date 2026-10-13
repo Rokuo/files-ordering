@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
 use std::fmt::Debug;
-use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::{fs, io};
 
+use chrono::Local;
 use serde::Serialize;
 
-use crate::files::move_file;
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
@@ -36,6 +36,14 @@ pub struct Plan {
 }
 
 impl Plan {
+    fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
+        let _ = match to.parent() {
+            Some(parent) => fs::create_dir_all(parent),
+            None => Ok(()),
+        };
+        fs::rename(from, to)
+    }
+
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
             if entry.status == PlanStatus::New && entry.destination.try_exists()? {
@@ -45,47 +53,27 @@ impl Plan {
         Ok(())
     }
 
-    pub fn execute(&self) -> RunReport {
-        let mut run_report = RunReport { reports: vec![] };
+    pub fn execute(&self, rule_name: String) -> RunReport {
+        let mut run_report = RunReport {
+            date: Local::now().date_naive(),
+            rule_name,
+            reports: vec![],
+        };
         for planned_move in &self.entries {
-            let outcome: MoveOutcome = match planned_move.status {
-                PlanStatus::New => {
-                    if let Err(err) = move_file(&planned_move.source, &planned_move.destination) {
-                        match err.kind() {
-                            ErrorKind::NotFound => {
-                                MoveOutcome::Failed(MoveError::NotFound)
-                            }
-                            ErrorKind::PermissionDenied => {
-                                MoveOutcome::Failed(MoveError::PermissionDenied)
-                            }
-                            _ => {
-                                MoveOutcome::Failed(MoveError::Other(err.to_string()))
-                            }
-                        }
-                    } else {
-                        MoveOutcome::Moved
-                    }
-                },
-                PlanStatus::Skipped => MoveOutcome::Skipped,
-                PlanStatus::Conflict(_) => MoveOutcome::Conflict,
-            };
-
             let file_report = ReportFile {
-                original_path: planned_move
-                    .source
-                    .clone()
-                    .into_os_string()
-                    .into_string()
-                    .unwrap(),
-                destination_path: planned_move
-                    .destination
-                    .clone()
-                    .into_os_string()
-                    .into_string()
-                    .unwrap(),
-                outcome: outcome,
+                source: planned_move.source.clone(),
+                destination: planned_move.destination.clone(),
+                outcome: match planned_move.status {
+                    PlanStatus::New => {
+                        match self.move_file(&planned_move.source, &planned_move.destination) {
+                            Ok(_) => MoveOutcome::Moved,
+                            Err(err) => MoveOutcome::Failed(MoveError::from(err)),
+                        }
+                    }
+                    PlanStatus::Skipped => MoveOutcome::Skipped,
+                    PlanStatus::Conflict(_) => MoveOutcome::Conflict,
+                },
             };
-
             run_report.reports.push(file_report)
         }
         run_report
@@ -188,15 +176,15 @@ mod tests {
             ],
         };
 
-        let runreport = plan.execute();
+        let runreport = plan.execute("rule name".to_string());
 
         assert!(runreport.reports.len() == 3);
         assert_eq!(runreport.reports[0].outcome, MoveOutcome::Moved);
-        assert_ne!(runreport.reports[0].destination_path, String::new());
+        assert_ne!(runreport.reports[0].destination, String::new());
         assert_eq!(runreport.reports[1].outcome, MoveOutcome::Moved);
-        assert_ne!(runreport.reports[1].destination_path, String::new());
+        assert_ne!(runreport.reports[1].destination, String::new());
         assert_eq!(runreport.reports[2].outcome, MoveOutcome::Skipped);
-        assert_ne!(runreport.reports[2].destination_path, String::new());
+        assert_ne!(runreport.reports[2].destination, String::new());
     }
 
     #[test]
@@ -212,14 +200,14 @@ mod tests {
             ],
         };
 
-        let run_report = plan.execute();
+        let run_report = plan.execute("rule name".to_string());
 
         assert_eq!(run_report.reports.len(), 3);
         assert_eq!(
             run_report.reports[1].outcome,
             MoveOutcome::Failed(MoveError::NotFound)
         );
-        assert_ne!(run_report.reports[1].destination_path, String::new());
+        assert_ne!(run_report.reports[1].destination, String::new());
         assert_eq!(run_report.reports[2].outcome, MoveOutcome::Conflict);
     }
 
@@ -230,15 +218,14 @@ mod tests {
         let destination = dir.path().join("2026").join("09").join("photo.txt");
         std::fs::write(&source, b"coucou").unwrap();
         let plan = Plan {
-            entries: vec![ PlannedMove {
-                    source: source.clone(),
-                    destination: destination.clone(),
-                    status: PlanStatus::New
-                }
-            ],
+            entries: vec![PlannedMove {
+                source: source.clone(),
+                destination: destination.clone(),
+                status: PlanStatus::New,
+            }],
         };
 
-        let run_report = plan.execute();
+        let run_report = plan.execute("rule name".to_string());
 
         assert_eq!(run_report.reports.len(), 1);
         assert_eq!(run_report.reports[0].outcome, MoveOutcome::Moved);

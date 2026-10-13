@@ -1,24 +1,29 @@
 #![allow(dead_code)]
 
-use crate::models::error::move_error::MoveError;
-use serde::Serialize;
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+use crate::models::error::move_error::MoveError;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MoveOutcome {
     Moved,
     Skipped,
     Conflict,
     Failed(MoveError),
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReportFile {
-    pub original_path: String,
-    pub destination_path: String,
+    pub source: PathBuf,
+    pub destination: PathBuf,
     pub outcome: MoveOutcome,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunReport {
+    pub date: NaiveDate,
+    pub rule_name: String,
     pub reports: Vec<ReportFile>,
 }
 
