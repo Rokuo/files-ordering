@@ -9,27 +9,27 @@ use chrono::Local;
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictKind {
     InPlan,
     OnDisk,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanStatus {
     New,
     Conflict(ConflictKind),
     Skipped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedMove {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub status: PlanStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
