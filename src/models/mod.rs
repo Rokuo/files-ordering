@@ -6,4 +6,5 @@ pub mod history;
 pub mod matches;
 pub mod plan;
 pub mod rule;
+pub mod run_report;
 pub mod token;
