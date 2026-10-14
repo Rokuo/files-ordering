@@ -5,51 +5,49 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use chrono::Local;
-use serde::Serialize;
 
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictKind {
     InPlan,
     OnDisk,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanStatus {
     New,
     Conflict(ConflictKind),
     Skipped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedMove {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub status: PlanStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
-impl Plan {
-    fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
-        match to.parent() {
-            Some(parent) => fs::create_dir_all(parent),
-            None => Ok(()),
-        }?;
-        match to.exists() {
-            false => fs::rename(from, to),
-            true => Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "File already exists",
-            )),
-        }
+fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
     }
-
+    if !to.try_exists()? {
+        fs::rename(from, to)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "File already exists",
+        ))
+    }
+}
+impl Plan {
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
             if entry.status == PlanStatus::New && entry.destination.try_exists()? {
@@ -71,8 +69,11 @@ impl Plan {
                 destination: planned_move.destination.clone(),
                 outcome: match planned_move.status {
                     PlanStatus::New => {
-                        match self.move_file(&planned_move.source, &planned_move.destination) {
+                        match move_file(&planned_move.source, &planned_move.destination) {
                             Ok(_) => MoveOutcome::Moved,
+                            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+                                MoveOutcome::Conflict
+                            }
                             Err(err) => MoveOutcome::Failed(MoveError::from(err)),
                         }
                     }
@@ -265,7 +266,7 @@ mod tests {
 
         let report = plan.execute("rule".to_string());
 
-        assert_ne!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Conflict);
         assert!(plan.entries[0].source.exists());
         assert_eq!(
             std::fs::read(&plan.entries[0].destination).unwrap(),
