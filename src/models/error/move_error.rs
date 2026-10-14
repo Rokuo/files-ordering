@@ -46,6 +46,18 @@ mod tests {
             MoveError::from(io::Error::from(ErrorKind::PermissionDenied)),
             MoveError::PermissionDenied
         );
+        assert_eq!(
+            MoveError::NotFound.to_string(),
+            "File not found".to_string()
+        );
+        assert_eq!(
+            MoveError::PermissionDenied.to_string(),
+            "Permission denied".to_string()
+        );
+        assert_eq!(
+            MoveError::Other("coucou".to_string()).to_string(),
+            "coucou".to_string()
+        );
     }
 
     #[test]

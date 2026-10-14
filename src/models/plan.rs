@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use chrono::Local;
-use serde::Serialize;
 
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
@@ -35,6 +34,19 @@ pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
+fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if !to.try_exists()? {
+        fs::rename(from, to)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "File already exists",
+        ))
+    }
+}
 impl Plan {
     fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
         match to.parent() {
@@ -71,8 +83,11 @@ impl Plan {
                 destination: planned_move.destination.clone(),
                 outcome: match planned_move.status {
                     PlanStatus::New => {
-                        match self.move_file(&planned_move.source, &planned_move.destination) {
+                        match move_file(&planned_move.source, &planned_move.destination) {
                             Ok(_) => MoveOutcome::Moved,
+                            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+                                MoveOutcome::Conflict
+                            }
                             Err(err) => MoveOutcome::Failed(MoveError::from(err)),
                         }
                     }
@@ -265,7 +280,7 @@ mod tests {
 
         let report = plan.execute("rule".to_string());
 
-        assert_ne!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Conflict);
         assert!(plan.entries[0].source.exists());
         assert_eq!(
             std::fs::read(&plan.entries[0].destination).unwrap(),
