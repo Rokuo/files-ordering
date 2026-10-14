@@ -9,27 +9,27 @@ use chrono::Local;
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum ConflictKind {
     InPlan,
     OnDisk,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum PlanStatus {
     New,
     Conflict(ConflictKind),
     Skipped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlannedMove {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub status: PlanStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
@@ -48,6 +48,20 @@ fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
     }
 }
 impl Plan {
+    fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
+        match to.parent() {
+            Some(parent) => fs::create_dir_all(parent),
+            None => Ok(()),
+        }?;
+        match to.exists() {
+            false => fs::rename(from, to),
+            true => Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "File already exists",
+            )),
+        }
+    }
+
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
             if entry.status == PlanStatus::New && entry.destination.try_exists()? {
