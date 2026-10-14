@@ -37,11 +37,17 @@ pub struct Plan {
 
 impl Plan {
     fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
-        let _ = match to.parent() {
+        match to.parent() {
             Some(parent) => fs::create_dir_all(parent),
             None => Ok(()),
-        };
-        fs::rename(from, to)
+        }?;
+        match to.exists() {
+            false => fs::rename(from, to),
+            true => Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "File already exists",
+            )),
+        }
     }
 
     pub fn check_disk(&mut self) -> std::io::Result<()> {
@@ -165,50 +171,120 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_sample_plan_no_errors() {
-        let tmp_dir = TempDir::new().unwrap();
-        let skipped = tmp_dir.path().join("conflict-planned.txt");
+    fn test_execute_moves_new_entries() {
+        let dir = TempDir::new().unwrap();
         let plan = Plan {
             entries: vec![
-                create_file_and_plan(&tmp_dir, "file1.txt"),
-                create_file_and_plan(&tmp_dir, "file2.txt"),
-                planned(skipped, PlanStatus::Skipped),
+                create_file_and_plan(&dir, "file1.txt"),
+                create_file_and_plan(&dir, "file2.txt"),
             ],
         };
 
-        let runreport = plan.execute("rule name".to_string());
+        let report = plan.execute("rule".to_string());
 
-        assert!(runreport.reports.len() == 3);
-        assert_eq!(runreport.reports[0].outcome, MoveOutcome::Moved);
-        assert_ne!(runreport.reports[0].destination, String::new());
-        assert_eq!(runreport.reports[1].outcome, MoveOutcome::Moved);
-        assert_ne!(runreport.reports[1].destination, String::new());
-        assert_eq!(runreport.reports[2].outcome, MoveOutcome::Skipped);
-        assert_ne!(runreport.reports[2].destination, String::new());
+        assert_eq!(report.reports.len(), 2);
+        for (entry, planned) in report.reports.iter().zip(&plan.entries) {
+            assert_eq!(entry.outcome, MoveOutcome::Moved);
+            assert_eq!(entry.source, planned.source);
+            assert_eq!(entry.destination, planned.destination);
+            assert!(!planned.source.exists());
+            assert_eq!(
+                std::fs::read(&planned.destination).unwrap(),
+                b"some content"
+            );
+        }
     }
 
     #[test]
-    fn test_execute_sample_plan_with_errors() {
+    fn test_execute_leaves_skipped_and_conflicting_entries_in_place() {
         let dir = TempDir::new().unwrap();
-        let err_not_found = dir.path().join("nothing-here.txt");
-        let conflict = dir.path().join("conflict-planned.txt");
         let plan = Plan {
             entries: vec![
-                create_file_and_plan(&dir, "already-here.txt"),
-                planned(err_not_found, PlanStatus::New),
-                planned(conflict, PlanStatus::Conflict(ConflictKind::OnDisk)),
+                PlannedMove {
+                    status: PlanStatus::Skipped,
+                    ..create_file_and_plan(&dir, "skipped.txt")
+                },
+                PlannedMove {
+                    status: PlanStatus::Conflict(ConflictKind::InPlan),
+                    ..create_file_and_plan(&dir, "in_plan.txt")
+                },
+                PlannedMove {
+                    status: PlanStatus::Conflict(ConflictKind::OnDisk),
+                    ..create_file_and_plan(&dir, "on_disk.txt")
+                },
             ],
         };
 
-        let run_report = plan.execute("rule name".to_string());
+        let report = plan.execute("rule".to_string());
 
-        assert_eq!(run_report.reports.len(), 3);
+        let outcomes: Vec<MoveOutcome> = report.reports.iter().map(|r| r.outcome.clone()).collect();
         assert_eq!(
-            run_report.reports[1].outcome,
+            outcomes,
+            vec![
+                MoveOutcome::Skipped,
+                MoveOutcome::Conflict,
+                MoveOutcome::Conflict
+            ]
+        );
+        for planned in &plan.entries {
+            assert!(planned.source.exists());
+            assert!(!planned.destination.exists());
+        }
+    }
+
+    #[test]
+    fn test_execute_keeps_going_after_a_failed_move() {
+        let dir = TempDir::new().unwrap();
+        let missing = PlannedMove {
+            source: dir.path().join("ghost.txt"),
+            destination: dir.path().join("dest_ghost.txt"),
+            status: PlanStatus::New,
+        };
+        let plan = Plan {
+            entries: vec![missing, create_file_and_plan(&dir, "file.txt")],
+        };
+
+        let report = plan.execute("rule".to_string());
+
+        assert_eq!(
+            report.reports[0].outcome,
             MoveOutcome::Failed(MoveError::NotFound)
         );
-        assert_ne!(run_report.reports[1].destination, String::new());
-        assert_eq!(run_report.reports[2].outcome, MoveOutcome::Conflict);
+        assert_eq!(report.reports[1].outcome, MoveOutcome::Moved);
+        assert!(plan.entries[1].destination.exists());
+    }
+
+    #[test]
+    fn test_execute_never_overwrites_an_existing_destination() {
+        let dir = TempDir::new().unwrap();
+        let entry = create_file_and_plan(&dir, "file.txt");
+        std::fs::write(&entry.destination, b"already there").unwrap();
+        let plan = Plan {
+            entries: vec![entry],
+        };
+
+        let report = plan.execute("rule".to_string());
+
+        assert_ne!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert!(plan.entries[0].source.exists());
+        assert_eq!(
+            std::fs::read(&plan.entries[0].destination).unwrap(),
+            b"already there"
+        );
+    }
+
+    #[test]
+    fn test_execute_records_the_rule_name_and_the_day_of_the_run() {
+        let plan = Plan { entries: vec![] };
+
+        // bracketed by two reads of the clock so a run across midnight cannot fail it
+        let before = Local::now().date_naive();
+        let report = plan.execute("Camera dump".to_string());
+        let after = Local::now().date_naive();
+
+        assert_eq!(report.rule_name, "Camera dump");
+        assert!(before <= report.date && report.date <= after);
+        assert!(report.reports.is_empty());
     }
 
     #[test]

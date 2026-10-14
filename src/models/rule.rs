@@ -88,8 +88,10 @@ mod tests {
     use crate::models::destination::Rename;
     use crate::models::file_item::FileItem;
     use crate::models::matches::{DateTest, ExtensionTest, NameTest, SizeTest};
+    use crate::models::run_report::MoveOutcome;
     use chrono::NaiveDate;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     fn sample_file_item() -> FileItem {
         crate::models::file_item::FileItem {
@@ -315,5 +317,57 @@ mod tests {
         assert!(plan_result.is_ok());
         let plan = plan_result.unwrap();
         assert_eq!(plan.entries[0].status, PlanStatus::Skipped);
+    }
+
+    #[test]
+    fn test_rule_sorts_a_folder_end_to_end() {
+        let dir = TempDir::new().unwrap();
+        let inbox = dir.path().join("inbox");
+        let sorted = dir.path().join("sorted");
+        std::fs::create_dir(&inbox).unwrap();
+        for name in ["holiday.jpg", "invoice.pdf", "notes.md"] {
+            std::fs::write(inbox.join(name), name).unwrap();
+        }
+        let rule = Rule {
+            name: "Inbox sweep".to_string(),
+            destination: Destination {
+                folder: sorted.clone(),
+                sub_folder_pattern: "{type}".to_string(),
+                rename: None,
+            },
+            match_mode: MatchMode::Any,
+            conditions: vec![Condition::Extension(ExtensionTest::IsOneOf(vec![
+                "jpg".to_string(),
+                "pdf".to_string(),
+            ]))],
+            last_run: None,
+        };
+        let files: Vec<FileItem> = std::fs::read_dir(&inbox)
+            .unwrap()
+            .map(|entry| FileItem::new(entry.unwrap().path()).unwrap())
+            .collect();
+
+        let mut plan = rule.plan(&files).unwrap();
+        plan.check_disk().unwrap();
+        let report = plan.execute(rule.name.clone());
+
+        assert_eq!(report.rule_name, "Inbox sweep");
+        assert_eq!(report.reports.len(), 2);
+        assert!(
+            report
+                .reports
+                .iter()
+                .all(|e| e.outcome == MoveOutcome::Moved)
+        );
+        assert_eq!(
+            std::fs::read(sorted.join("photos").join("holiday.jpg")).unwrap(),
+            b"holiday.jpg"
+        );
+        assert_eq!(
+            std::fs::read(sorted.join("documents").join("invoice.pdf")).unwrap(),
+            b"invoice.pdf"
+        );
+        assert!(!inbox.join("holiday.jpg").exists());
+        assert!(inbox.join("notes.md").exists());
     }
 }

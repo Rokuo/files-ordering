@@ -29,27 +29,35 @@ pub struct RunReport {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
-    use crate::models::plan::{Plan, PlanStatus, PlannedMove};
-    use tempfile::TempDir;
 
-    fn planned(destination: PathBuf, status: PlanStatus) -> PlannedMove {
-        PlannedMove {
-            source: PathBuf::from("/source").join(destination.file_name().unwrap()),
-            destination,
-            status,
+    fn entry(name: &str, outcome: MoveOutcome) -> ReportFile {
+        ReportFile {
+            source: PathBuf::from("inbox").join(name),
+            destination: PathBuf::from("sorted").join(name),
+            outcome,
         }
     }
 
     #[test]
-    fn test_execute_moves_a_new_entry() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("already-there.txt");
-        let _plan = Plan {
-            entries: vec![planned(path, PlanStatus::New)],
+    fn test_run_report_round_trips_through_json() {
+        let report = RunReport {
+            date: NaiveDate::from_ymd_opt(2026, 10, 14).unwrap(),
+            rule_name: "Camera dump".to_string(),
+            reports: vec![
+                entry("moved.jpg", MoveOutcome::Moved),
+                entry("skipped.jpg", MoveOutcome::Skipped),
+                entry("conflict.jpg", MoveOutcome::Conflict),
+                entry(
+                    "failed.jpg",
+                    MoveOutcome::Failed(MoveError::Other("disk full".to_string())),
+                ),
+            ],
         };
-        let _run_report: RunReport;
+
+        let json = serde_json::to_string(&report).unwrap();
+        let back: RunReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(back, report);
     }
 }
