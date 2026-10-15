@@ -1,10 +1,9 @@
 #![allow(dead_code)]
 
+use chrono::Local;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
-
-use chrono::Local;
 
 use crate::models::error::move_error::MoveError;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
@@ -34,18 +33,47 @@ pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
-fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
+fn copy_then_delete(from: &Path, to: &Path) -> io::Result<()> {
     if let Some(parent) = to.parent() {
         fs::create_dir_all(parent)?;
     }
     if !to.try_exists()? {
-        fs::rename(from, to)
+        match fs::copy(from, to) {
+            Result::Ok(_) => fs::remove_file(from),
+            Err(err) => Err(io::Error::new(err.kind(), "Issue when copying")),
+        }
     } else {
         Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "File already exists",
         ))
     }
+}
+
+fn move_file_with(
+    from: &Path,
+    to: &Path,
+    rename: impl Fn(&Path, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if !to.try_exists()? {
+        match rename(from, to) {
+            Result::Ok(_) => Result::Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
+            Err(err) => Err(io::Error::new(err.kind(), "Issue when renaming")),
+        }
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "File already exists",
+        ))
+    }
+}
+
+fn move_file(from: &Path, to: &Path) -> io::Result<()> {
+    move_file_with(from, to, |from, to| fs::rename(from, to))
 }
 impl Plan {
     pub fn check_disk(&mut self) -> std::io::Result<()> {
@@ -308,5 +336,78 @@ mod tests {
         assert_eq!(run_report.reports[0].outcome, MoveOutcome::Moved);
         assert!(!source.exists());
         assert_eq!(std::fs::read(&destination).unwrap(), b"coucou");
+    }
+
+    #[test]
+    fn test_copy_then_delete_moves_the_bytes_and_removes_the_source() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        copy_then_delete(&source, &destination).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+    #[test]
+    fn test_move_file_falls_back_to_a_copy_when_rename_crosses_devices() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("card").join("photo.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::from(io::ErrorKind::CrossesDevices))
+        })
+        .unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_move_file_does_not_copy_when_rename_fails_for_another_reason() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert!(source.exists());
+        assert!(!destination.exists());
+    }
+    #[test]
+    #[ignore = "needs two filesystems; run by hand with: cargo test -- --ignored"]
+    fn test_execute_moves_a_file_to_another_filesystem() {
+        let here = TempDir::new().unwrap();
+        let elsewhere = TempDir::new_in("target").unwrap();
+        let probe = here.path().join("probe");
+        std::fs::write(&probe, b"").unwrap();
+        let crossing = std::fs::rename(&probe, elsewhere.path().join("probe"));
+        assert!(
+            crossing.is_err_and(|e| e.kind() == io::ErrorKind::CrossesDevices),
+            "the temp folder and target/ are on the same filesystem on this machine"
+        );
+        let source = here.path().join("photo.jpg");
+        let destination = elsewhere.path().join("photo.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+        let plan = Plan {
+            entries: vec![PlannedMove {
+                source: source.clone(),
+                destination: destination.clone(),
+                status: PlanStatus::New,
+            }],
+        };
+
+        let report = plan.execute("rule".to_string());
+
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
     }
 }
