@@ -48,20 +48,6 @@ fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
     }
 }
 impl Plan {
-    fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
-        match to.parent() {
-            Some(parent) => fs::create_dir_all(parent),
-            None => Ok(()),
-        }?;
-        match to.exists() {
-            false => fs::rename(from, to),
-            true => Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "File already exists",
-            )),
-        }
-    }
-
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
             if entry.status == PlanStatus::New && entry.destination.try_exists()? {
