@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use crate::models::error::move_error::MoveError;
+use crate::models::move_mode::MoveMode;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,24 +34,20 @@ pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
-fn create_dir_all(path: &Path) -> io::Result<()> {
-    fs::create_dir_all(path)
+fn create_dir_all_and_check_path(path: &Path) -> io::Result<bool> {
+    if let Some(parent_path) = path.parent() {
+        fs::create_dir_all(parent_path)?;
+    }
+    path.try_exists()
 }
 
-fn copy_then_delete(from: &Path, to: &Path) -> io::Result<()> {
-    if let Some(parent) = to.parent() {
-        create_dir_all(parent)?;
-    }
-    if !to.try_exists()? {
-        match fs::copy(from, to) {
-            Ok(_) => fs::remove_file(from),
-            Err(err) => Err(io::Error::new(err.kind(), "Issue when copying")),
+fn copy_then_delete(from: &Path, to: &Path) -> io::Result<MoveOutcome> {
+    match fs::copy(from, to) {
+        Ok(_) => {
+            fs::remove_file(from)?;
+            Ok(MoveOutcome::Moved)
         }
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "File already exists",
-        ))
+        Err(err) => Err(io::Error::new(err.kind(), "Issue when copying")),
     }
 }
 
@@ -58,26 +55,29 @@ fn move_file_with(
     from: &Path,
     to: &Path,
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
-) -> io::Result<()> {
-    if let Some(parent) = to.parent() {
-        create_dir_all(parent)?;
+) -> io::Result<MoveOutcome> {
+    match rename(from, to) {
+        Ok(_) => Ok(MoveOutcome::Moved),
+        Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
+        Err(err) => Err(err),
     }
-    if !to.try_exists()? {
-        match rename(from, to) {
-            Ok(_) => Ok(()),
-            Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
-            Err(err) => Err(io::Error::new(err.kind(), "Issue when renaming")),
-        }
-    } else {
+}
+
+fn move_file(from: &Path, to: &Path, move_mode: MoveMode) -> io::Result<MoveOutcome> {
+    if create_dir_all_and_check_path(to)? {
         Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "File already exists",
         ))
+    } else {
+        match move_mode {
+            MoveMode::Move => move_file_with(from, to, |from, to| fs::rename(from, to)),
+            MoveMode::Copy => move_file_with(from, to, |from, to| {
+                fs::copy(from, to)?;
+                Ok(())
+            }),
+        }
     }
-}
-
-fn move_file(from: &Path, to: &Path) -> io::Result<()> {
-    move_file_with(from, to, |from, to| fs::rename(from, to))
 }
 
 impl Plan {
@@ -90,7 +90,7 @@ impl Plan {
         Ok(())
     }
 
-    pub fn execute(&self, rule_name: String) -> RunReport {
+    pub fn execute(&self, rule_name: String, move_mode: MoveMode) -> RunReport {
         let mut run_report = RunReport {
             date: Local::now().date_naive(),
             rule_name,
@@ -102,8 +102,9 @@ impl Plan {
                 destination: planned_move.destination.clone(),
                 outcome: match planned_move.status {
                     PlanStatus::New => {
-                        match move_file(&planned_move.source, &planned_move.destination) {
-                            Ok(_) => MoveOutcome::Moved,
+                        match move_file(&planned_move.source, &planned_move.destination, move_mode)
+                        {
+                            Ok(move_outcome) => move_outcome,
                             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
                                 MoveOutcome::Conflict
                             }
@@ -214,7 +215,7 @@ mod tests {
             ],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(report.reports.len(), 2);
         for (entry, planned) in report.reports.iter().zip(&plan.entries) {
@@ -249,7 +250,7 @@ mod tests {
             ],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         let outcomes: Vec<MoveOutcome> = report.reports.iter().map(|r| r.outcome.clone()).collect();
         assert_eq!(
@@ -278,7 +279,7 @@ mod tests {
             entries: vec![missing, create_file_and_plan(&dir, "file.txt")],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(
             report.reports[0].outcome,
@@ -297,7 +298,7 @@ mod tests {
             entries: vec![entry],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(report.reports[0].outcome, MoveOutcome::Conflict);
         assert!(plan.entries[0].source.exists());
@@ -313,7 +314,7 @@ mod tests {
 
         // bracketed by two reads of the clock so a run across midnight cannot fail it
         let before = Local::now().date_naive();
-        let report = plan.execute("Camera dump".to_string());
+        let report = plan.execute("Camera dump".to_string(), MoveMode::Move);
         let after = Local::now().date_naive();
 
         assert_eq!(report.rule_name, "Camera dump");
@@ -335,7 +336,7 @@ mod tests {
             }],
         };
 
-        let run_report = plan.execute("rule name".to_string());
+        let run_report = plan.execute("rule name".to_string(), MoveMode::Move);
 
         assert_eq!(run_report.reports.len(), 1);
         assert_eq!(run_report.reports[0].outcome, MoveOutcome::Moved);
@@ -359,7 +360,7 @@ mod tests {
     fn test_move_file_falls_back_to_a_copy_when_rename_crosses_devices() {
         let dir = TempDir::new().unwrap();
         let source = dir.path().join("photo.jpg");
-        let destination = dir.path().join("card").join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
         std::fs::write(&source, b"pixels").unwrap();
 
         move_file_with(&source, &destination, |_, _| {
@@ -386,6 +387,57 @@ mod tests {
         assert!(source.exists());
         assert!(!destination.exists());
     }
+
+    #[test]
+    fn test_move_file_in_copy_mode_never_overwrites_an_existing_destination() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+        std::fs::write(&destination, b"already there").unwrap();
+
+        let result = move_file(&source, &destination, MoveMode::Copy);
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&source).unwrap(), b"pixels");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"already there");
+    }
+
+    #[test]
+    fn test_move_file_keeps_the_message_of_a_failed_rename() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "the drive stopped answering",
+            ))
+        });
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "the drive stopped answering"
+        );
+    }
+    #[test]
+    fn test_execute_in_copy_mode_leaves_the_source_in_place() {
+        let dir = TempDir::new().unwrap();
+        let plan = Plan {
+            entries: vec![create_file_and_plan(&dir, "file.txt")],
+        };
+
+        plan.execute("rule".to_string(), MoveMode::Copy);
+
+        assert!(plan.entries[0].source.exists());
+        assert_eq!(
+            std::fs::read(&plan.entries[0].destination).unwrap(),
+            b"some content"
+        );
+    }
+
     #[test]
     #[ignore = "needs two filesystems; run by hand with: cargo test -- --ignored"]
     fn test_execute_moves_a_file_to_another_filesystem() {
@@ -409,7 +461,7 @@ mod tests {
             }],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
         assert!(!source.exists());

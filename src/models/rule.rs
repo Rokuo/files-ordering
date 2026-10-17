@@ -88,6 +88,7 @@ mod tests {
     use crate::models::destination::Rename;
     use crate::models::file_item::FileItem;
     use crate::models::matches::{DateTest, ExtensionTest, NameTest, SizeTest};
+    use crate::models::move_mode::MoveMode;
     use crate::models::run_report::MoveOutcome;
     use chrono::NaiveDate;
     use std::path::PathBuf;
@@ -349,7 +350,7 @@ mod tests {
 
         let mut plan = rule.plan(&files).unwrap();
         plan.check_disk().unwrap();
-        let report = plan.execute(rule.name.clone());
+        let report = plan.execute(rule.name.clone(), MoveMode::Move);
 
         assert_eq!(report.rule_name, "Inbox sweep");
         assert_eq!(report.reports.len(), 2);
