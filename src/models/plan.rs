@@ -33,13 +33,17 @@ pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
+fn create_dir_all(path: &Path) -> io::Result<()> {
+    fs::create_dir_all(path)
+}
+
 fn copy_then_delete(from: &Path, to: &Path) -> io::Result<()> {
     if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
+        create_dir_all(parent)?;
     }
     if !to.try_exists()? {
         match fs::copy(from, to) {
-            Result::Ok(_) => fs::remove_file(from),
+            Ok(_) => fs::remove_file(from),
             Err(err) => Err(io::Error::new(err.kind(), "Issue when copying")),
         }
     } else {
@@ -56,11 +60,11 @@ fn move_file_with(
     rename: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<()> {
     if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
+        create_dir_all(parent)?;
     }
     if !to.try_exists()? {
         match rename(from, to) {
-            Result::Ok(_) => Result::Ok(()),
+            Ok(_) => Ok(()),
             Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
             Err(err) => Err(io::Error::new(err.kind(), "Issue when renaming")),
         }
@@ -75,6 +79,7 @@ fn move_file_with(
 fn move_file(from: &Path, to: &Path) -> io::Result<()> {
     move_file_with(from, to, |from, to| fs::rename(from, to))
 }
+
 impl Plan {
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
