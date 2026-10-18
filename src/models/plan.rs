@@ -41,25 +41,47 @@ fn create_dir_all_and_check_path(path: &Path) -> io::Result<bool> {
     path.try_exists()
 }
 
-fn copy_then_delete(from: &Path, to: &Path) -> io::Result<MoveOutcome> {
-    match fs::copy(from, to) {
-        Ok(_) => {
-            fs::remove_file(from)?;
-            Ok(MoveOutcome::Moved)
-        }
-        Err(err) => Err(io::Error::new(err.kind(), "Issue when copying")),
+fn copy_then_delete_with(
+    from: &Path,
+    to: &Path,
+    delete: impl Fn(&Path) -> io::Result<()>,
+) -> io::Result<MoveOutcome> {
+    copy_file_with(from, to, |org, dest| {
+        fs::copy(org, dest)?;
+        Ok(MoveOutcome::Copied)
+    })?;
+    match delete(from) {
+        Ok(()) => Ok(MoveOutcome::Moved),
+        Err(err) => Ok(MoveOutcome::CopiedButDeleteFailed(MoveError::from(err))),
     }
+}
+
+fn copy_then_delete(from: &Path, to: &Path) -> io::Result<MoveOutcome> {
+    copy_then_delete_with(from, to, |path| fs::remove_file(path))
 }
 
 fn move_file_with(
     from: &Path,
     to: &Path,
-    rename: impl Fn(&Path, &Path) -> io::Result<()>,
+    rename: impl Fn(&Path, &Path) -> io::Result<MoveOutcome>,
 ) -> io::Result<MoveOutcome> {
     match rename(from, to) {
-        Ok(_) => Ok(MoveOutcome::Moved),
         Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
-        Err(err) => Err(err),
+        other => other,
+    }
+}
+
+fn copy_file_with(
+    from: &Path,
+    to: &Path,
+    copy: impl Fn(&Path, &Path) -> io::Result<MoveOutcome>,
+) -> io::Result<MoveOutcome> {
+    match copy(from, to) {
+        Err(err) => {
+            let _ = fs::remove_file(to);
+            Err(err)
+        }
+        other => other,
     }
 }
 
@@ -71,10 +93,13 @@ fn move_file(from: &Path, to: &Path, move_mode: MoveMode) -> io::Result<MoveOutc
         ))
     } else {
         match move_mode {
-            MoveMode::Move => move_file_with(from, to, |from, to| fs::rename(from, to)),
-            MoveMode::Copy => move_file_with(from, to, |from, to| {
+            MoveMode::Move => move_file_with(from, to, |from, to| {
+                fs::rename(from, to)?;
+                Ok(MoveOutcome::Moved)
+            }),
+            MoveMode::Copy => copy_file_with(from, to, |from, to| {
                 fs::copy(from, to)?;
-                Ok(())
+                Ok(MoveOutcome::Copied)
             }),
         }
     }
@@ -422,6 +447,43 @@ mod tests {
             "the drive stopped answering"
         );
     }
+
+    #[test]
+    fn test_copy_then_delete_reports_a_source_it_could_not_delete() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_then_delete_with(&source, &destination, |_| {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        });
+
+        assert_eq!(
+            result.unwrap(),
+            MoveOutcome::CopiedButDeleteFailed(MoveError::PermissionDenied)
+        );
+        assert!(source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_copy_file_removes_a_half_written_destination_when_the_copy_fails() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_file_with(&source, &destination, |_, to| {
+            std::fs::write(to, b"pix")?;
+            Err(io::Error::from(io::ErrorKind::StorageFull))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::StorageFull);
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&source).unwrap(), b"pixels");
+    }
+
     #[test]
     fn test_execute_in_copy_mode_leaves_the_source_in_place() {
         let dir = TempDir::new().unwrap();
@@ -429,13 +491,27 @@ mod tests {
             entries: vec![create_file_and_plan(&dir, "file.txt")],
         };
 
-        plan.execute("rule".to_string(), MoveMode::Copy);
+        let report = plan.execute("rule".to_string(), MoveMode::Copy);
 
         assert!(plan.entries[0].source.exists());
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Copied);
         assert_eq!(
             std::fs::read(&plan.entries[0].destination).unwrap(),
             b"some content"
         );
+    }
+
+    #[test]
+    fn test_copy_file_keeps_the_copy_error_when_nothing_was_written() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_file_with(&source, &dir.path().join("photo_copy.jpg"), |_, _| {
+            Err(io::Error::from(io::ErrorKind::StorageFull))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::StorageFull);
     }
 
     #[test]
