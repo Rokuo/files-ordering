@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
+use chrono::Local;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
-use chrono::Local;
-
 use crate::models::error::move_error::MoveError;
+use crate::models::move_mode::MoveMode;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,34 +34,78 @@ pub struct Plan {
     pub entries: Vec<PlannedMove>,
 }
 
-fn move_file(from: &Path, to: &Path) -> Result<(), io::Error> {
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
+fn create_dir_all_and_check_path(path: &Path) -> io::Result<bool> {
+    if let Some(parent_path) = path.parent() {
+        fs::create_dir_all(parent_path)?;
     }
-    if !to.try_exists()? {
-        fs::rename(from, to)
-    } else {
+    path.try_exists()
+}
+
+fn copy_then_delete_with(
+    from: &Path,
+    to: &Path,
+    delete: impl Fn(&Path) -> io::Result<()>,
+) -> io::Result<MoveOutcome> {
+    copy_file_with(from, to, |org, dest| {
+        fs::copy(org, dest)?;
+        Ok(MoveOutcome::Copied)
+    })?;
+    match delete(from) {
+        Ok(()) => Ok(MoveOutcome::Moved),
+        Err(err) => Ok(MoveOutcome::CopiedButDeleteFailed(MoveError::from(err))),
+    }
+}
+
+fn copy_then_delete(from: &Path, to: &Path) -> io::Result<MoveOutcome> {
+    copy_then_delete_with(from, to, |path| fs::remove_file(path))
+}
+
+fn move_file_with(
+    from: &Path,
+    to: &Path,
+    rename: impl Fn(&Path, &Path) -> io::Result<MoveOutcome>,
+) -> io::Result<MoveOutcome> {
+    match rename(from, to) {
+        Err(err) if err.kind() == io::ErrorKind::CrossesDevices => copy_then_delete(from, to),
+        other => other,
+    }
+}
+
+fn copy_file_with(
+    from: &Path,
+    to: &Path,
+    copy: impl Fn(&Path, &Path) -> io::Result<MoveOutcome>,
+) -> io::Result<MoveOutcome> {
+    match copy(from, to) {
+        Err(err) => {
+            let _ = fs::remove_file(to);
+            Err(err)
+        }
+        other => other,
+    }
+}
+
+fn move_file(from: &Path, to: &Path, move_mode: MoveMode) -> io::Result<MoveOutcome> {
+    if create_dir_all_and_check_path(to)? {
         Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "File already exists",
         ))
-    }
-}
-impl Plan {
-    fn move_file(&self, from: &Path, to: &Path) -> Result<(), io::Error> {
-        match to.parent() {
-            Some(parent) => fs::create_dir_all(parent),
-            None => Ok(()),
-        }?;
-        match to.exists() {
-            false => fs::rename(from, to),
-            true => Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "File already exists",
-            )),
+    } else {
+        match move_mode {
+            MoveMode::Move => move_file_with(from, to, |from, to| {
+                fs::rename(from, to)?;
+                Ok(MoveOutcome::Moved)
+            }),
+            MoveMode::Copy => copy_file_with(from, to, |from, to| {
+                fs::copy(from, to)?;
+                Ok(MoveOutcome::Copied)
+            }),
         }
     }
+}
 
+impl Plan {
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
             if entry.status == PlanStatus::New && entry.destination.try_exists()? {
@@ -71,7 +115,7 @@ impl Plan {
         Ok(())
     }
 
-    pub fn execute(&self, rule_name: String) -> RunReport {
+    pub fn execute(&self, rule_name: String, move_mode: MoveMode) -> RunReport {
         let mut run_report = RunReport {
             date: Local::now().date_naive(),
             rule_name,
@@ -83,8 +127,9 @@ impl Plan {
                 destination: planned_move.destination.clone(),
                 outcome: match planned_move.status {
                     PlanStatus::New => {
-                        match move_file(&planned_move.source, &planned_move.destination) {
-                            Ok(_) => MoveOutcome::Moved,
+                        match move_file(&planned_move.source, &planned_move.destination, move_mode)
+                        {
+                            Ok(move_outcome) => move_outcome,
                             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
                                 MoveOutcome::Conflict
                             }
@@ -195,7 +240,7 @@ mod tests {
             ],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(report.reports.len(), 2);
         for (entry, planned) in report.reports.iter().zip(&plan.entries) {
@@ -230,7 +275,7 @@ mod tests {
             ],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         let outcomes: Vec<MoveOutcome> = report.reports.iter().map(|r| r.outcome.clone()).collect();
         assert_eq!(
@@ -259,7 +304,7 @@ mod tests {
             entries: vec![missing, create_file_and_plan(&dir, "file.txt")],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(
             report.reports[0].outcome,
@@ -278,7 +323,7 @@ mod tests {
             entries: vec![entry],
         };
 
-        let report = plan.execute("rule".to_string());
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
 
         assert_eq!(report.reports[0].outcome, MoveOutcome::Conflict);
         assert!(plan.entries[0].source.exists());
@@ -294,7 +339,7 @@ mod tests {
 
         // bracketed by two reads of the clock so a run across midnight cannot fail it
         let before = Local::now().date_naive();
-        let report = plan.execute("Camera dump".to_string());
+        let report = plan.execute("Camera dump".to_string(), MoveMode::Move);
         let after = Local::now().date_naive();
 
         assert_eq!(report.rule_name, "Camera dump");
@@ -316,11 +361,186 @@ mod tests {
             }],
         };
 
-        let run_report = plan.execute("rule name".to_string());
+        let run_report = plan.execute("rule name".to_string(), MoveMode::Move);
 
         assert_eq!(run_report.reports.len(), 1);
         assert_eq!(run_report.reports[0].outcome, MoveOutcome::Moved);
         assert!(!source.exists());
         assert_eq!(std::fs::read(&destination).unwrap(), b"coucou");
+    }
+
+    #[test]
+    fn test_copy_then_delete_moves_the_bytes_and_removes_the_source() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        copy_then_delete(&source, &destination).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+    #[test]
+    fn test_move_file_falls_back_to_a_copy_when_rename_crosses_devices() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::from(io::ErrorKind::CrossesDevices))
+        })
+        .unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_move_file_does_not_copy_when_rename_fails_for_another_reason() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert!(source.exists());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn test_move_file_in_copy_mode_never_overwrites_an_existing_destination() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+        std::fs::write(&destination, b"already there").unwrap();
+
+        let result = move_file(&source, &destination, MoveMode::Copy);
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&source).unwrap(), b"pixels");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"already there");
+    }
+
+    #[test]
+    fn test_move_file_keeps_the_message_of_a_failed_rename() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = move_file_with(&source, &destination, |_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "the drive stopped answering",
+            ))
+        });
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "the drive stopped answering"
+        );
+    }
+
+    #[test]
+    fn test_copy_then_delete_reports_a_source_it_could_not_delete() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_moved.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_then_delete_with(&source, &destination, |_| {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        });
+
+        assert_eq!(
+            result.unwrap(),
+            MoveOutcome::CopiedButDeleteFailed(MoveError::PermissionDenied)
+        );
+        assert!(source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_copy_file_removes_a_half_written_destination_when_the_copy_fails() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        let destination = dir.path().join("photo_copy.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_file_with(&source, &destination, |_, to| {
+            std::fs::write(to, b"pix")?;
+            Err(io::Error::from(io::ErrorKind::StorageFull))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::StorageFull);
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&source).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_execute_in_copy_mode_leaves_the_source_in_place() {
+        let dir = TempDir::new().unwrap();
+        let plan = Plan {
+            entries: vec![create_file_and_plan(&dir, "file.txt")],
+        };
+
+        let report = plan.execute("rule".to_string(), MoveMode::Copy);
+
+        assert!(plan.entries[0].source.exists());
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Copied);
+        assert_eq!(
+            std::fs::read(&plan.entries[0].destination).unwrap(),
+            b"some content"
+        );
+    }
+
+    #[test]
+    fn test_copy_file_keeps_the_copy_error_when_nothing_was_written() {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("photo.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+
+        let result = copy_file_with(&source, &dir.path().join("photo_copy.jpg"), |_, _| {
+            Err(io::Error::from(io::ErrorKind::StorageFull))
+        });
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::StorageFull);
+    }
+
+    #[test]
+    #[ignore = "needs two filesystems; run by hand with: cargo test -- --ignored"]
+    fn test_execute_moves_a_file_to_another_filesystem() {
+        let here = TempDir::new().unwrap();
+        let elsewhere = TempDir::new_in("target").unwrap();
+        let probe = here.path().join("probe");
+        std::fs::write(&probe, b"").unwrap();
+        let crossing = std::fs::rename(&probe, elsewhere.path().join("probe"));
+        assert!(
+            crossing.is_err_and(|e| e.kind() == io::ErrorKind::CrossesDevices),
+            "the temp folder and target/ are on the same filesystem on this machine"
+        );
+        let source = here.path().join("photo.jpg");
+        let destination = elsewhere.path().join("photo.jpg");
+        std::fs::write(&source, b"pixels").unwrap();
+        let plan = Plan {
+            entries: vec![PlannedMove {
+                source: source.clone(),
+                destination: destination.clone(),
+                status: PlanStatus::New,
+            }],
+        };
+
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
+
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
     }
 }

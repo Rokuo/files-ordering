@@ -10,6 +10,7 @@ pub enum MoveError {
     NotFound,
     PermissionDenied,
     Other(String),
+    StorageFull,
 }
 
 impl Display for MoveError {
@@ -18,6 +19,7 @@ impl Display for MoveError {
             MoveError::NotFound => write!(f, "File not found"),
             MoveError::PermissionDenied => write!(f, "Permission denied"),
             MoveError::Other(msg) => write!(f, "{msg}"),
+            MoveError::StorageFull => write!(f, "Not enough space on the destination drive"),
         }
     }
 }
@@ -27,6 +29,7 @@ impl From<io::Error> for MoveError {
         match value.kind() {
             ErrorKind::NotFound => MoveError::NotFound,
             ErrorKind::PermissionDenied => MoveError::PermissionDenied,
+            ErrorKind::StorageFull => MoveError::StorageFull,
             _ => MoveError::Other(value.to_string()),
         }
     }
@@ -47,6 +50,10 @@ mod tests {
             MoveError::PermissionDenied
         );
         assert_eq!(
+            MoveError::from(io::Error::from(ErrorKind::StorageFull)),
+            MoveError::StorageFull
+        );
+        assert_eq!(
             MoveError::NotFound.to_string(),
             "File not found".to_string()
         );
@@ -57,6 +64,10 @@ mod tests {
         assert_eq!(
             MoveError::Other("coucou".to_string()).to_string(),
             "coucou".to_string()
+        );
+        assert_eq!(
+            MoveError::StorageFull.to_string(),
+            "Not enough space on the destination drive".to_string()
         );
     }
 

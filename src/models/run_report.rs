@@ -9,9 +9,11 @@ use crate::models::error::move_error::MoveError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MoveOutcome {
     Moved,
+    Copied,
     Skipped,
     Conflict,
     Failed(MoveError),
+    CopiedButDeleteFailed(MoveError),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReportFile {
@@ -51,6 +53,11 @@ mod tests {
                 entry(
                     "failed.jpg",
                     MoveOutcome::Failed(MoveError::Other("disk full".to_string())),
+                ),
+                entry("copied.jpg", MoveOutcome::Copied),
+                entry(
+                    "copy_delete_failed.lol",
+                    MoveOutcome::CopiedButDeleteFailed(MoveError::Other("".to_string())),
                 ),
             ],
         };

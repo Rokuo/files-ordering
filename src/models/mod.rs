@@ -4,6 +4,7 @@ pub mod error;
 pub mod file_item;
 pub mod history;
 pub mod matches;
+pub mod move_mode;
 pub mod plan;
 pub mod rule;
 pub mod run_report;
