@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use crate::models::conflict_policy::ConflictPolicy;
 use crate::models::error::move_error::MoveError;
 use crate::models::move_mode::MoveMode;
 use crate::models::run_report::{MoveOutcome, ReportFile, RunReport};
@@ -20,6 +21,7 @@ pub enum PlanStatus {
     New,
     Conflict(ConflictKind),
     Skipped,
+    Replace,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +107,10 @@ fn move_file(from: &Path, to: &Path, move_mode: MoveMode) -> io::Result<MoveOutc
     }
 }
 
+fn with_counter(_file_path: &Path, _counter: u32) -> PathBuf {
+    todo!();
+}
+
 impl Plan {
     pub fn check_disk(&mut self) -> std::io::Result<()> {
         for entry in &mut self.entries {
@@ -138,17 +144,24 @@ impl Plan {
                     }
                     PlanStatus::Skipped => MoveOutcome::Skipped,
                     PlanStatus::Conflict(_) => MoveOutcome::Conflict,
+                    PlanStatus::Replace => todo!(),
                 },
             };
             run_report.reports.push(file_report)
         }
         run_report
     }
+    
+    fn resolve_conflicts(&self, _policy: ConflictPolicy) -> io::Result<()> {
+        todo!()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::models::conflict_policy::ConflictPolicy;
+
+use super::*;
     use tempfile::TempDir;
 
     fn planned(destination: PathBuf, status: PlanStatus) -> PlannedMove {
@@ -542,5 +555,195 @@ mod tests {
         assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
         assert!(!source.exists());
         assert_eq!(std::fs::read(&destination).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn test_with_counter_adds_the_number_before_extension() {
+        let photo = PathBuf::from("photos").join("IMG_4471.heic");
+
+        assert_eq!(
+            with_counter(&photo, 1),
+            PathBuf::from("photos").join("IMG_4471 (1).heic")
+        );
+        assert_eq!(
+            with_counter(&photo, 2),
+            PathBuf::from("photos").join("IMG_4471 (2).heic")
+        );
+    }
+
+    #[test]
+    fn test_with_counter_handles_names_without_a_plain_extension() {
+        assert_eq!(
+            with_counter(Path::new("README"), 1),
+            PathBuf::from("README (1)")
+        );
+        assert_eq!(
+            with_counter(Path::new(".gitignore"), 1),
+            PathBuf::from(".gitignore (1)")
+        );
+        assert_eq!(
+            with_counter(Path::new("archive.tar.gz"), 1),
+            PathBuf::from("archive.tar (1).gz")
+        );
+    }
+
+    #[test]
+    fn test_resolve_conflicts_keep_both_finds_the_first_free_number() {
+        let dir = TempDir::new().unwrap();
+        let taken = dir.path().join("photo.jpg");
+        let free = dir.path().join("free.jpg");
+        std::fs::write(&taken, b"already there").unwrap();
+        std::fs::write(with_counter(&taken, 1), b"also there").unwrap();
+        let plan = Plan {
+            entries: vec![
+                planned(taken.clone(), PlanStatus::Conflict(ConflictKind::OnDisk)),
+                planned(free.clone(), PlanStatus::New),
+            ],
+        };
+
+        plan.resolve_conflicts(ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(plan.entries[0].status, PlanStatus::New);
+        assert_eq!(plan.entries[0].destination, with_counter(&taken, 2));
+        assert_eq!(plan.entries[1].status, PlanStatus::New);
+        assert_eq!(plan.entries[1].destination, free);
+    }
+
+    #[test]
+    fn test_resolve_conflicts_keep_both_lets_the_first_claimant_keep_the_name() {
+        let dir = TempDir::new().unwrap();
+        let shared = dir.path().join("photo.jpg");
+        let plan = Plan {
+            entries: vec![
+                planned(shared.clone(), PlanStatus::Conflict(ConflictKind::InPlan)),
+                planned(shared.clone(), PlanStatus::Conflict(ConflictKind::InPlan)),
+            ],
+        };
+
+        plan.resolve_conflicts(ConflictPolicy::KeepBoth).unwrap();
+
+        assert_eq!(plan.entries[0].destination, shared);
+        assert_eq!(plan.entries[1].destination, with_counter(&shared, 1));
+        assert!(plan.entries.iter().all(|e| e.status == PlanStatus::New));
+    }
+
+    #[test]
+    fn test_resolve_conflicts_replace_never_targets_a_file_from_the_same_run() {
+        let dir = TempDir::new().unwrap();
+        let on_disk = dir.path().join("old.jpg");
+        let shared = dir.path().join("shared.jpg");
+        std::fs::write(&on_disk, b"old").unwrap();
+        let plan = Plan {
+            entries: vec![
+                planned(on_disk, PlanStatus::Conflict(ConflictKind::OnDisk)),
+                planned(shared.clone(), PlanStatus::Conflict(ConflictKind::InPlan)),
+                planned(shared, PlanStatus::Conflict(ConflictKind::InPlan)),
+            ],
+        };
+
+        plan.resolve_conflicts(ConflictPolicy::Replace).unwrap();
+
+        assert_eq!(plan.entries[0].status, PlanStatus::Replace);
+        assert_eq!(plan.entries[1].status, PlanStatus::New);
+        assert_eq!(
+            plan.entries[2].status,
+            PlanStatus::Conflict(ConflictKind::InPlan)
+        );
+    }
+
+    #[test]
+    fn test_resolve_conflicts_skip_leaves_real_conflicts_alone() {
+        let dir = TempDir::new().unwrap();
+        let on_disk = dir.path().join("old.jpg");
+        let shared = dir.path().join("shared.jpg");
+        std::fs::write(&on_disk, b"old").unwrap();
+        let plan = Plan {
+            entries: vec![
+                planned(on_disk.clone(), PlanStatus::Conflict(ConflictKind::OnDisk)),
+                planned(shared.clone(), PlanStatus::Conflict(ConflictKind::InPlan)),
+                planned(shared.clone(), PlanStatus::Conflict(ConflictKind::InPlan)),
+            ],
+        };
+
+        plan.resolve_conflicts(ConflictPolicy::Skip).unwrap();
+
+        assert_eq!(
+            plan.entries[0].status,
+            PlanStatus::Conflict(ConflictKind::OnDisk)
+        );
+        assert_eq!(plan.entries[1].status, PlanStatus::New);
+        assert_eq!(
+            plan.entries[2].status,
+            PlanStatus::Conflict(ConflictKind::InPlan)
+        );
+        assert_eq!(plan.entries[0].destination, on_disk);
+        assert_eq!(plan.entries[2].destination, shared);
+    }
+
+    #[test]
+    fn test_execute_replace_overwrites_and_leaves_no_backup_behind() {
+        let dir = TempDir::new().unwrap();
+        let entry = create_file_and_plan(&dir, "photo.jpg");
+        std::fs::write(&entry.destination, b"old content").unwrap();
+        let plan = Plan {
+            entries: vec![PlannedMove {
+                status: PlanStatus::Replace,
+                ..entry
+            }],
+        };
+
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
+
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert!(!plan.entries[0].source.exists());
+        assert_eq!(
+            std::fs::read(&plan.entries[0].destination).unwrap(),
+            b"some content"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn test_execute_replace_keeps_the_old_file_when_the_move_fails() {
+        let dir = TempDir::new().unwrap();
+        let destination = dir.path().join("photo.jpg");
+        std::fs::write(&destination, b"old content").unwrap();
+        let plan = Plan {
+            entries: vec![PlannedMove {
+                source: dir.path().join("ghost.jpg"),
+                destination: destination.clone(),
+                status: PlanStatus::Replace,
+            }],
+        };
+
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
+
+        assert_eq!(
+            report.reports[0].outcome,
+            MoveOutcome::Failed(MoveError::NotFound)
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), b"old content");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn test_keep_both_moves_the_file_under_its_new_name() {
+        let dir = TempDir::new().unwrap();
+        let entry = create_file_and_plan(&dir, "photo.jpg");
+        let original = entry.destination.clone();
+        std::fs::write(&original, b"old content").unwrap();
+        let mut plan = Plan {
+            entries: vec![entry],
+        };
+        plan.check_disk().unwrap();
+
+        plan.resolve_conflicts(ConflictPolicy::KeepBoth).unwrap();
+        let report = plan.execute("rule".to_string(), MoveMode::Move);
+
+        let renamed = with_counter(&original, 1);
+        assert_eq!(report.reports[0].outcome, MoveOutcome::Moved);
+        assert_eq!(report.reports[0].destination, renamed);
+        assert_eq!(std::fs::read(&renamed).unwrap(), b"some content");
+        assert_eq!(std::fs::read(&original).unwrap(), b"old content");
     }
 }

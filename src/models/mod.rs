@@ -1,4 +1,5 @@
 pub mod config;
+pub mod conflict_policy;
 pub mod destination;
 pub mod error;
 pub mod file_item;
