@@ -107,8 +107,16 @@ fn move_file(from: &Path, to: &Path, move_mode: MoveMode) -> io::Result<MoveOutc
     }
 }
 
-fn with_counter(_file_path: &Path, _counter: u32) -> PathBuf {
-    todo!();
+fn with_counter(file_path: &Path, n: u32) -> PathBuf {
+    let mut path_buf: PathBuf = PathBuf::from(file_path);
+    let file_name: String = file_path.file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+    let file_name_with_counter : String = format!("{file_name} ({n})");
+    path_buf.set_file_name(file_name_with_counter);
+    path_buf.set_extension(file_path.extension().and_then(|ext| ext.to_str()).unwrap_or(""));
+    path_buf
 }
 
 impl Plan {
